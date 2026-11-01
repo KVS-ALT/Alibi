@@ -21,5 +21,5 @@ it('builds the latest final voice segment when the build command fires in the sa
  const preview = within(screen.getByRole('main'));
  expect(await preview.findByRole('heading', { name: 'Immediate Studio', level: 1 })).toBeTruthy();
  expect(screen.queryByRole('alert')).toBeNull();
- expect(screen.getByText('Captured brief')).toBeTruthy();
+ expect(sessionStorage.getItem('forme.tab-session.v1')).toContain('Immediate Studio');
 });

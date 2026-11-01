@@ -75,3 +75,9 @@ The UI runner's actual-browser waitlist-report.json confirms only text/name and 
 Latest independent review suite evidence comprises 3 session cases, 2 preview interaction cases, 14 export/security cases, 20 domain scenario cases, and 1 waitlist privacy case. These were run in targeted groups; the integration owner runs the combined canonical suite and production build after merges. The last review addition, 5f32b14, covers obsolete filter options across template changes and awaits the integration owner's final fix/check.
 
 No new visual blocker was observed in the final mobile shell or assigned ten refreshed domain templates. Live microphone hardware, actual speech accuracy, locked-screen/background recording, external email delivery, real bookings, payments, authentication, and production service integration were not verified or claimed. Email delivery remains disabled; waitlist storage is the latest form state in this browser tab, with no subscriber database or entry history.
+
+## Final closeout
+
+The obsolete category-option fix is present in canonical session reconciliation. Independently reran canonical tests/integration/session.test.ts: 4/4 passed, including the Bread-to-Acoustic replacement regression. There are no remaining blocking findings from this review. The review-owned targeted coverage is now 41 cases across session, preview, export/security, domain scenarios, and waitlist privacy; canonical full-suite counts belong to the integration run.
+
+Stable screenshot/report copies are available at C:/Users/User/Documents/Codex/2026-11-01/task-2/artifacts/ui-qa/. Final inspection included the mobile-first and waitlist screenshots described above. Any subsequent UI polish needs its own final integration smoke check.

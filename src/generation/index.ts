@@ -35,7 +35,10 @@ export function validateUiSpec(value:unknown): {success:true;data:UiSpec}|{succe
   for(const screen of s.screens){ unique(screen.id); for(const c of screen.components){unique(c.id);
     if(c.type==='form') for(const f of c.properties.fields) unique(f.id);
     if(c.type==='navigation') for(const n of c.properties.items) if(!screenIds.has(n.screenId))error='Unknown navigation destination';
-    if(c.type==='table' && !Object.hasOwn(s.demoData,c.properties.dataKey))error='Unknown table data';
+    if(c.type==='table') {
+      if(!Object.hasOwn(s.demoData,c.properties.dataKey))error='Unknown table data';
+      else if(s.demoData[c.properties.dataKey].some(row=>c.properties.columns.some(column=>!Object.hasOwn(row,column))))error='Unknown table column';
+    }
     for(const a of c.actions){
       if(a.type==='navigate'&&!screenIds.has(a.screenId))error='Unknown action destination';
       if(a.type==='submitDemoForm'&&!formIds.has(a.formId))error='Unknown form';
@@ -46,7 +49,7 @@ export function validateUiSpec(value:unknown): {success:true;data:UiSpec}|{succe
 }
 const clean=(s:string)=>s.replace(/[\u0000-\u001f]/g,' ').replace(/\s+/g,' ').trim();
 export function createBrief(sessionId:string,version:number,input:string):Brief {
- const content=clean(input).slice(0,12000);
+ const content=input.replace(/\r\n?/g,'\n').replace(/[\u0000-\u0009\u000b-\u001f]/g,' ').replace(/[^\S\n]+/g,' ').trim().slice(0,12000);
  const clauses=content.split(/(?<=[.!?])\s+|\n|;|\b(?:also|and then)\b/i).map(clean).filter(Boolean);
  const audience=content.match(/(?:for|aimed at|targeting)\s+([^.!?]{3,90})/i)?.[1] ?? 'Visitors exploring this concept';
  const style=['minimal','warm','bold','dark','playful','elegant','modern','colorful','calm','editorial'].filter(word=>new RegExp(`\\b${word}\\b`,'i').test(content));
@@ -67,10 +70,11 @@ export async function generatePrototype(request:GenerationRequest, options:{temp
  const input=[request.brief.purpose,...request.brief.requirements].join(' ');
  const templateId=options.templateId??chooseTemplate(input);
  const template=TEMPLATE_CATALOG.find(t=>t.id===templateId); if(!template)throw new Error('Choose a reviewed template');
- const title=titleFrom(request.brief.purpose,template.name);
+ if(request.previousUiSpec && (request.previousUiSpec.sessionId!==request.sessionId || request.previousUiSpec.basedOnBriefVersion>request.briefVersion || !validateUiSpec(request.previousUiSpec).success))throw new Error('Previous prototype does not belong to this session or brief history');
+ const title=titleFrom(input,template.name);
  const requirement=request.brief.requirements.slice(1,4);
  const spec:UiSpec={sessionId:request.sessionId,version:(request.previousUiSpec?.version??0)+1,basedOnBriefVersion:request.briefVersion,templateId,templateVersion:1,demoDataLabel:'Synthetic demo data • local interactions only',demoData:{listings:[{name:`${title} · Featured`,category:'Featured',status:'Available'},{name:`${title} · Community`,category:'Community',status:'Available'},{name:`${title} · Upcoming`,category:'Featured',status:'Coming soon'}]},screens:[
- {id:'home',title,components:[{id:'site-navigation',type:'navigation',properties:{items:[{label:'Discover',screenId:'home'},{label:'Get in touch',screenId:'contact'}]},actions:[]},{id:'hero',type:'text',properties:{text:request.brief.purpose},actions:[]},{id:'audience',type:'card',properties:{title:`Made for ${request.brief.audience}`,body:requirement[0]??`Explore ${title} and try the interactive demo.`},actions:[]},...requirement.slice(1).map((body,i)=>({id:`feature-${i}`,type:'card' as const,properties:{title:`What you can do · ${i+1}`,body},actions:[]})),{id:'category-filter',type:'form',properties:{fields:[{id:'category',label:'Filter demo items',type:'select',required:false,options:['All','Featured','Community']}],submitLabel:'Apply filter'},actions:[{type:'filter',dataKey:'listings',field:'category',stateKey:'category'}]},{id:'results',type:'table',properties:{columns:['name','category','status'],dataKey:'listings'},actions:[]},{id:'contact-button',type:'button',properties:{label:'Get in touch'},actions:[{type:'navigate',screenId:'contact'}]}]},
+ {id:'home',title,components:[{id:'site-navigation',type:'navigation',properties:{items:[{label:'Discover',screenId:'home'},{label:'Get in touch',screenId:'contact'}]},actions:[]},{id:'hero-brand',type:'text',properties:{text:title},actions:[]},{id:'hero-title',type:'text',properties:{text:title},actions:[]},{id:'hero-description',type:'text',properties:{text:requirement.join(' ')||request.brief.purpose},actions:[]},{id:'audience',type:'card',properties:{title:`Made for ${request.brief.audience}`,body:requirement[0]??`Explore ${title} and try the interactive demo.`},actions:[]},...requirement.slice(1).map((body,i)=>({id:`feature-${i}`,type:'card' as const,properties:{title:`What you can do · ${i+1}`,body},actions:[]})),{id:'category-filter',type:'form',properties:{fields:[{id:'category',label:'Filter demo items',type:'select',required:false,options:['All','Featured','Community']}],submitLabel:'Apply filter'},actions:[{type:'filter',dataKey:'listings',field:'category',stateKey:'category'}]},{id:'results',type:'table',properties:{columns:['name','category','status'],dataKey:'listings'},actions:[]},{id:'contact-button',type:'button',properties:{label:'Get in touch'},actions:[{type:'navigate',screenId:'contact'}]}]},
  {id:'contact',title:`Connect with ${title}`,components:[{id:'back',type:'button',properties:{label:'Back to discover'},actions:[{type:'navigate',screenId:'home'}]},{id:'contact-form',type:'form',properties:{fields:[{id:'visitor-name',label:'Your name',type:'text',required:true},{id:'visitor-email',label:'Email',type:'email',required:true},{id:'visitor-message',label:'What would you like to know?',type:'text',required:false}],submitLabel:'Send demo request'},actions:[{type:'submitDemoForm',formId:'contact-form',resultStateKey:'contact-result'}]},{id:'demo-notice',type:'text',properties:{text:'This is a local demo. Nothing is sent or stored on a server.'},actions:[]}]}]};
  const checked=validateUiSpec(spec);if(!checked.success)throw new Error(checked.error);
  return {...envelope,uiSpec:checked.data};

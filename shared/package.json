@@ -1,0 +1,10 @@
+{
+  "name": "@alibi/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "schema.ts",
+  "types": "schema.ts",
+  "exports": { ".": "./schema.ts" },
+  "dependencies": { "zod": "^3.25.0" }
+}

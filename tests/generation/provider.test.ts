@@ -44,7 +44,7 @@ describe('server-only OpenAI structured generation', () => {
     expect(result.uiSpec.screens.map(s => [s.id, s.components.map(c => [c.id, c.type, c.actions])])).toEqual(baseline.screens.map(s => [s.id, s.components.map(c => [c.id, c.type, c.actions])]));
     const [url, init] = transport.mock.calls[0], payload = JSON.parse(String(init?.body));
     expect(url).toBe('https://api.openai.com/v1/responses');
-    expect(payload).toMatchObject({ model: 'gpt-6-sol', reasoning: { effort: 'none' }, store: false, max_output_tokens: 3000, text: { format: { type: 'json_schema', strict: true } } });
+    expect(payload).toMatchObject({ model: 'gpt-6-sol', service_tier: 'default', reasoning: { effort: 'none' }, store: false, max_output_tokens: 3000, text: { format: { type: 'json_schema', strict: true } } });
     expect(payload).not.toHaveProperty('tools');
     expect(String(init?.body)).not.toContain('test-secret-never-live');
     expect(JSON.stringify(result)).not.toContain('test-secret-never-live');

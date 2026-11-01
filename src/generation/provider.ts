@@ -255,7 +255,8 @@ export function createOpenAIProvider(config: OpenAIProviderOptions = {}) {
     const shape = outputSchema(options.templateId), jsonSchema = z.toJSONSchema(shape);
     delete jsonSchema.$schema;
     const payload = JSON.stringify({
-      model, store: false, max_output_tokens: maxOutputTokens, reasoning: { effort: 'none' },
+      // Explicit standard tier cannot inherit a project's Fast/priority default.
+      model, service_tier: 'default', store: false, max_output_tokens: maxOutputTokens, reasoning: { effort: 'none' },
       input: [
         { role: 'system', content: instructions },
         { role: 'user', content: JSON.stringify({ brief: { purpose: request.brief.purpose, audience: request.brief.audience, requirements: request.brief.requirements, style: request.brief.style, unknowns: request.brief.unknowns }, catalog: catalogContext([request.brief.purpose, ...request.brief.requirements].join(' '), options.templateId), allowedCardIds: baseline.screens.flatMap(screen => screen.components).filter(c => c.type === 'card').map(c => c.id) }) },

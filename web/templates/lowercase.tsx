@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Portfolio, ProjectSection } from "@alibi/shared";
-import { Expand, Icon, MockFrame, ProjectDetails, Skeleton, initials, portfolioTitle, projectPreviewHtml, type DetailsTheme } from "./parts";
+import { ProjectLaunch, Expand, Icon, MockFrame, ProjectDetails, Skeleton, initials, portfolioTitle, projectPreviewHtml, type DetailsTheme } from "./parts";
 
 // Personal, all-lowercase portfolio in the style of affa.nz: live activity card, text-first project
 // cards (the mock UI only appears once a card is opened), guestbook, self-deprecating footer.
@@ -130,7 +130,7 @@ function Card({ p }: { p: ProjectSection }) {
     <article
       className={`animate-[fadein_.6s_ease-out] rounded-2xl border bg-white p-4 transition-colors ${open ? "border-stone-300" : "border-stone-200 hover:border-stone-300"}`}
     >
-      <button onClick={() => setOpen(!open)} className="-m-2 block w-[calc(100%+1rem)] rounded-lg p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-orange-700" aria-expanded={open}>
+      <ProjectLaunch url={p.siteUrl} onToggle={() => setOpen(!open)} open={open} className="-m-2 block w-[calc(100%+1rem)] rounded-lg p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-orange-700">
         <div className="flex items-baseline justify-between gap-3">
           <h3 className="font-semibold">{p.title}</h3>
           <span className="shrink-0 text-xs text-stone-500">
@@ -139,7 +139,7 @@ function Card({ p }: { p: ProjectSection }) {
         </div>
         <div className="mt-0.5 text-sm text-orange-800">{p.award ?? p.category}</div>
         <p className="mt-2 text-sm text-stone-500">{p.tagline}</p>
-      </button>
+      </ProjectLaunch>
       <Expand open={open}>
         <div className="text-sm text-stone-700">
           <ProjectDetails

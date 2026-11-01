@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Portfolio, ProjectSection } from "@alibi/shared";
-import { Expand, Icon, MockFrame, ProjectDetails, Skeleton, portfolioTitle, projectPreviewHtml, type DetailsTheme } from "./parts";
+import { ProjectLaunch, Expand, Icon, MockFrame, ProjectDetails, Skeleton, portfolioTitle, projectPreviewHtml, type DetailsTheme } from "./parts";
 
 // Dark, dev-tool aesthetic in the style of the Vercel / Next.js docs: grid background, mono labels,
 // projects shown as deployment cards (status dot, commit hash, build time).
@@ -121,7 +121,7 @@ function Card({ p }: { p: ProjectSection }) {
     <article
       className={`animate-[fadein_.6s_ease-out] overflow-hidden rounded-xl border bg-neutral-950 transition-colors ${open ? "border-white/25 md:col-span-2" : "border-white/10 hover:border-white/20"}`}
     >
-      <button onClick={() => setOpen(!open)} className="block w-full text-left" aria-expanded={open}>
+      <ProjectLaunch url={p.siteUrl} onToggle={() => setOpen(!open)} open={open} className="block w-full text-left">
         <div className="border-b border-white/10 p-3 pb-0">
           <MockFrame html={projectPreviewHtml(p)} title={p.title} dark />
         </div>
@@ -147,7 +147,7 @@ function Card({ p }: { p: ProjectSection }) {
           </div>
           {p.award && <div className="mt-3 text-xs text-amber-300/90">◆ {p.award}</div>}
         </div>
-      </button>
+      </ProjectLaunch>
       <Expand open={open}>
         <div className="border-t border-white/10 px-4 pb-5 text-sm text-neutral-300">
           <ProjectDetails p={p} t={T} open={open} />

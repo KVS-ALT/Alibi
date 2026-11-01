@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ProjectSection } from '@alibi/shared';
 import { renderDesignedProject } from '@/lib/mock-designs';
 
@@ -320,4 +320,8 @@ export function ProjectDetails({
       )}
     </div>
   );
+}
+
+export function ProjectLaunch({url,onToggle,open,className,children}:{url?:string;onToggle():void;open:boolean;className:string;children:ReactNode}) {
+ return url ? <a href={url} target="_blank" rel="noopener noreferrer" className={className}>{children}</a> : <button onClick={onToggle} className={className} aria-expanded={open}>{children}</button>;
 }

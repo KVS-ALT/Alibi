@@ -230,6 +230,9 @@ export function createEmailHandoff(config: EmailConfig = {}, dependencies: Email
   const outbox = dependencies.outbox ?? createMemoryEmailOutbox();
   const now = dependencies.now ?? Date.now;
   const allowed = new Set((config.allowedRecipients ?? []).map(mailbox).filter(validMailbox));
+  // Every provider field is untrusted, including IDs on successful responses.
+  // Never reflect or persist the configured credential inside a nominal message ID.
+  const safeMessageId=(value:unknown):value is string=>typeof value==='string'&&/^[a-z0-9_-]{1,200}$/i.test(value)&&!(config.apiKey&&value.includes(config.apiKey));
   const limits = { ...defaults };
   for (const name of Object.keys(defaults) as (keyof EmailLimits)[]) {
     const value = config.limits?.[name];
@@ -259,7 +262,7 @@ export function createEmailHandoff(config: EmailConfig = {}, dependencies: Email
     try {
       reservation = await outbox.reserve({ key, scopeKey, payloadHash: hash(body), eventId: input.eventId, sessionId: input.sessionId, projectId: input.projectId, projectVersion: input.projectVersion, recipient, createdAt: now() }, limits);
     } catch { return blocked('outbox_unavailable'); }
-    if (reservation.kind === 'existing') return { ...reservation.result };
+    if (reservation.kind === 'existing') return reservation.result.messageId!==undefined&&!safeMessageId(reservation.result.messageId)?{status:'unknown',reason:'delivery_unknown'}:{...reservation.result};
     if (reservation.kind === 'blocked') return blocked(reservation.reason, reservation.retryAfterSeconds);
     let result: EmailHandoffResult;
     try {
@@ -268,7 +271,7 @@ export function createEmailHandoff(config: EmailConfig = {}, dependencies: Email
         headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body,
       });
       const payload = object(response.body);
-      if (response.status === 202 && typeof payload.id === 'string' && /^[a-z0-9_-]{1,200}$/i.test(payload.id)) {
+      if (response.status === 202 && safeMessageId(payload.id)) {
         result = { status: 'queued', messageId: payload.id };
       } else if (response.status >= 400 && response.status < 500) {
         const code = object(payload.error).code;

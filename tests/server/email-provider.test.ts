@@ -48,6 +48,13 @@ describe('configured official Agentboxd adapter',()=>{
   expect(await restart.handoff({...input,eventId:'replayed-event'})).toEqual({status:'queued',messageId:'message_1'});expect(fetcher).toHaveBeenCalledTimes(1);
   const stored=await readFile(path,'utf8');expect(stored).not.toContain('test-only-secret');expect(stored).not.toContain(input.summary);expect(stored).not.toContain(input.projectUrl);
  });
+ it.each(['test-only-secret','prefix-test-only-secret-suffix'])('rejects an echoed credential in a successful provider ID before client or disk output',async(id)=>{
+  const path=await privatePath(),fetcher=vi.fn(async()=>response(202,{id,status:'queued'}));
+  const make=()=>createConfiguredAgentboxdHandoff(config,{fetcher,outbox:createFileEmailOutbox(path)});
+  const result=await make().handoff(input);expect(result).toEqual({status:'unknown',reason:'delivery_unknown'});expect(JSON.stringify(result)).not.toContain(config.apiKey);
+  const saved=await readFile(path,'utf8');expect(saved).not.toContain(config.apiKey);expect(saved).not.toContain('messageId');
+  expect(await make().handoff(input)).toEqual({status:'unknown',reason:'delivery_unknown'});expect(fetcher).toHaveBeenCalledTimes(1);
+ });
  it('honors short Retry-After and retries an in-progress request with identical key and payload',async()=>{
   const path=await privatePath(),sleep=vi.fn(async()=>{});
   const fetcher=vi.fn().mockResolvedValueOnce(response(429,refusal('rate_limited'),{'Retry-After':'1'})).mockResolvedValueOnce(response(409,refusal('idempotency_in_progress'))).mockResolvedValueOnce(response(202,{id:'message_2',status:'queued'}));

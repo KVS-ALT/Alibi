@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* Reviewed mock kits assemble these finite accent/status utilities at runtime.
+   Keep them in the compiled stylesheet used by the script-free previews. */
+@source inline("bg-{emerald,indigo,sky,violet,orange,rose,amber,teal}-{50,500,600}");
+@source inline("bg-{emerald,indigo,sky,violet,orange,rose,amber,teal}-{400,500}/10");
+@source inline("text-{emerald,indigo,sky,violet,orange,rose,amber,teal}-{300,400,500,600,700}");
+@source inline("from-{emerald,indigo,sky,violet,orange,rose,amber,teal}-{50,400}");
+@source inline("to-{emerald,indigo,sky,violet,orange,rose,amber,teal}-{100,600,950}");
+@source inline("border-{emerald,indigo,sky,violet,orange,rose,amber,teal}-500");
+@source inline("bg-{emerald,amber,rose,slate}-400 bg-{emerald,amber,rose,slate}-400/{10,15} text-{emerald,amber,rose,slate}-{400,500,600}");
+
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);

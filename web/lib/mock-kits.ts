@@ -227,9 +227,8 @@ export function mockSpecForProject(project: ProjectSection, context = '', stable
     : has(/\b(?:finance|budget|invoice|payment|expense)\b/) ? ['Monthly summary', 'Recent transaction', 'Category review', 'Pending entry']
     : has(/\b(?:dog|pet|walking)\b/) ? ['Morning walk', 'Neighborhood route', 'Afternoon booking', 'Weekly schedule']
     : ['Recent activity', 'Current workflow', 'Saved result', 'Next milestone'];
-  const details = project.details ?? [];
-  const items = rows.map((title, index) => ({ title, subtitle: clean(details[index]?.value ?? project.highlights[index % Math.max(1, project.highlights.length)] ?? project.tagline), meta: '', tag: ['Ready', 'In progress', 'Reviewed', 'Scheduled'][index], status: index === 1 ? 'warn' as const : 'good' as const }));
-  return MockSpec.parse({ kit, theme: hash % 2 ? 'light' : 'dark', accent: ACCENTS[hash % ACCENTS.length], appName: clean(project.title), context: clean(project.category), nav: kit === 'chat' ? ['Updates', 'Activity', 'Commands', 'Settings'] : ['Overview', 'Activity', 'Insights', 'Settings'], heading: clean(project.tagline || project.title), action: kit === 'terminal' ? 'run' : kit === 'chat' ? 'summary' : 'Open', stats: project.metrics.map(metric => ({ label: clean(metric.label), value: clean(metric.value), note: '' })), items, callout: clean(project.summary), user: 'you' });
+  const items = rows.map((title, index) => ({ title, subtitle: '', meta: '', tag: ['Ready', 'In progress', 'Reviewed', 'Scheduled'][index], status: index === 1 ? 'warn' as const : 'good' as const }));
+  return MockSpec.parse({ kit, theme: hash % 2 ? 'light' : 'dark', accent: ACCENTS[hash % ACCENTS.length], appName: clean(project.title), context: clean(project.category), nav: kit === 'chat' ? ['Updates', 'Activity', 'Commands', 'Settings'] : ['Overview', 'Activity', 'Insights', 'Settings'], heading: kit === 'cards' ? 'Browse' : kit === 'phone' ? 'Today' : kit === 'chat' ? 'Messages' : kit === 'terminal' ? 'Console' : 'Overview', action: kit === 'terminal' ? 'run' : kit === 'chat' ? 'summary' : 'Open', stats: project.metrics.map(metric => ({ label: clean(metric.label), value: clean(metric.value), note: '' })), items, callout: '', user: 'you' });
 }
 
 // Reference specs: shown on /preview/kits and used as the example in the agent prompt.

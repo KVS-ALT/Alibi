@@ -1,6 +1,7 @@
 // Each generated project runs this server in its own Render web service.
 const http = require('node:http');
 const { renderProjectDemo } = require('../web/lib/project-demo.cjs');
+const { renderProjectTemplate } = require('../web/lib/project-template.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const cssSource = fs.readFileSync(path.join(__dirname, '../web/lib/mock-kit-styles.ts'), 'utf8');
@@ -20,5 +21,5 @@ http.createServer((req, res) => {
   }
   if (req.url !== '/') { res.writeHead(404); res.end('Not found'); return; }
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'" });
-  res.end(renderProjectDemo(project, 'alibi-project:' + (process.env.PROJECT_ID || project.title)));
+  res.end(project.mockHtml ? renderProjectTemplate(project, css) : renderProjectDemo(project, 'alibi-project:' + (process.env.PROJECT_ID || project.title)));
 }).listen(Number(process.env.PORT || 3000), '0.0.0.0');

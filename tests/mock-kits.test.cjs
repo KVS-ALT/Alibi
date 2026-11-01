@@ -28,7 +28,7 @@ test('project facts populate bounded fields without leaking sample brands or inv
   const spec = mockSpecForProject(project,'','stable-identity');
   assert.equal(spec.appName, 'Roadnest');
   assert.equal(spec.stats[0].value, '146');
-  assert.match(spec.items[0].subtitle,/Compare prices/);
+  assert.equal(spec.items[0].subtitle, '');
   assert.match(spec.items[0].title,/hatchback/);
   assert.doesNotMatch(renderMock(spec),/shipit|studymatch|uw-robotics|https?:|\.com\b/);
   assert.equal(spec.accent,mockSpecForProject({...project,title:'Renamed'},'','stable-identity').accent);

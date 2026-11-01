@@ -9,7 +9,7 @@ export function mountStandalone(spec: UiSpec) {
   const forms: Record<string, Record<string, string>> = Object.create(null);
   const filters: Record<string, { field: string; stateKey: string }> = Object.create(null);
   const submitted: Record<string, string> = Object.create(null);
-  const metadata = new Set(['hero-brand', 'hero-title', 'hero-description']);
+  const metadata = new Set(['hero-brand', 'hero-title', 'hero-description', 'presentation-palette', 'presentation-layout', 'presentation-typography', 'presentation-density']);
 
   function element(tag: string, text: string) {
     const node = document.createElement(tag);

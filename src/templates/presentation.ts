@@ -1,5 +1,6 @@
 import type { UiSpec } from '../contracts';
 import { templateById } from './index';
+import { STYLE_METADATA_IDS } from './styleTokens';
 const visualCopy: Record<string, [string,string,string]> = {
   "studio-booking": [
     "A little room for big ideas.",
@@ -108,4 +109,4 @@ export function getTemplatePresentation(spec:UiSpec) {
  const copy=visualCopy[spec.templateId]??visualCopy['studio-booking'];
  return {brand:metadata('hero-brand')||(home?.title && home.title!=='Home'?home.title:template.name),title:metadata('hero-title')||copy[0],description:metadata('hero-description')||copy[1],cta:copy[2],tag:template.category==='Booking'?'A space for possibility':template.category==='Events'?'Something to look forward to':template.category==='Food'?'Made with care':'A considered collection',note:'Explore this interactive concept.',artCaption:spec.templateId==='portfolio'?'Sample project artwork':'Concept artwork'};
 }
-export const HERO_METADATA_IDS=new Set(['hero-brand','hero-title','hero-description']);
+export const HERO_METADATA_IDS=new Set(['hero-brand','hero-title','hero-description',...STYLE_METADATA_IDS]);

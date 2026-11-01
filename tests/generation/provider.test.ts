@@ -2,17 +2,22 @@ import { describe, expect, it, vi } from 'vitest';
 import type { GenerationRequest } from '../../src/contracts';
 import { createBrief, generatePrototype, validateUiSpec } from '../../src/generation';
 import { createOpenAIProvider } from '../../src/generation/provider';
+import { TEMPLATE_CATALOG } from '../../src/templates';
 
 function request(): GenerationRequest {
   const brief = createBrief('provider-session', 1, 'Build a bakery called Sunday Bread. Let people plan a pickup.');
   return { sessionId: brief.sessionId, requestId: 'provider-request', briefVersion: brief.version, brief };
 }
-async function fixture() {
-  const input = request(), result = await generatePrototype(input, { templateId: 'bakery' });
+async function fixture(templateId = 'bakery') {
+  const input = request(), result = await generatePrototype(input, { templateId });
   if (!('uiSpec' in result)) throw new Error(result.safeMessage);
   const draft = {
+    templateId,
     brief: { purpose: 'A neighbourhood bakery preorder concept', audience: 'Local bread lovers', requirements: ['Browse sample bread', 'Plan a local demo pickup'], style: ['warm'], unknowns: ['Real availability is unknown'] },
-    content: { brand: 'Sunday Bread', headline: 'A little goodness, fresh each morning.', description: 'Explore a fictional bake and plan your local demo pickup.', cards: result.uiSpec.screens.flatMap(s => s.components).filter(c => c.type === 'card').map(c => ({ id: c.id, title: 'Plan your next bake', body: 'A local demo, with no real order or reservation.' })), rows: result.uiSpec.demoData.listings },
+    content: { brand: 'Sunday Bread', headline: 'A little goodness, fresh each morning.', description: 'Explore a fictional bake and plan your local demo pickup.', cards: result.uiSpec.screens.flatMap(s => s.components).filter(c => c.type === 'card').map(c => ({ id: c.id, title: 'Plan your next bake', body: 'A local demo, with no real order or reservation.' })), rows: result.uiSpec.demoData.listings.map(row => ({ cells: Object.values(row).map(String) })) },
+    structure: { sections: ['overview', 'collection', 'filter', 'primary-action', 'form'], extraSections: [] as { kind: string; title: string; body: string }[] },
+    form: { fieldOverrides: [] as { id: string; enabled: boolean; label: string; required: boolean }[], extraFields: [] as { type: string; label: string; required: boolean; options: string[] }[], submitLabel: 'Save demo preorder' },
+    style: { palette: 'template', layout: 'template', typography: 'template', density: 'template' },
   };
   return { input, baseline: result.uiSpec, draft };
 }
@@ -138,7 +143,7 @@ describe('server-only OpenAI structured generation', () => {
   it('keeps renamed synthetic product choices aligned with the table and preserves revisions', async () => {
     const { input, baseline, draft } = await fixture();
     const before = JSON.stringify(input);
-    draft.content.rows = draft.content.rows.map((row, index) => ({ ...row, item: 'Synthetic bake ' + (index + 1) }));
+    draft.content.rows = draft.content.rows.map((row, index) => ({ cells: ['Synthetic bake ' + (index + 1), ...row.cells.slice(1)] }));
     input.previousUiSpec = baseline;
     const result = await configured(vi.fn<typeof fetch>().mockResolvedValue(response(draft))).generate(input, { templateId: 'bakery' });
     if (!('uiSpec' in result)) throw new Error(result.safeMessage);
@@ -169,5 +174,53 @@ describe('server-only OpenAI structured generation', () => {
     controller.abort();
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     expect(transport).not.toHaveBeenCalled();
+  });
+
+  it('lets the model select a different reviewed template and safely change structure, fields and style', async () => {
+    const { input, draft } = await fixture('restaurant');
+    draft.structure.sections = ['overview', 'primary-action', 'form'];
+    draft.structure.extraSections = [{ kind: 'card', title: 'Private gatherings', body: 'Ask about a fictional private dining concept.' }];
+    draft.form.fieldOverrides = [{ id: 'reservation-guests', enabled: false, label: 'Party size', required: false }];
+    draft.form.extraFields = [{ type: 'text', label: 'Occasion', required: false, options: [] }];
+    draft.style = { palette: 'warm', layout: 'stacked', typography: 'sans', density: 'compact' };
+    const result = await configured(vi.fn<typeof fetch>().mockResolvedValue(response(draft))).generate(input);
+    if (!('uiSpec' in result)) throw new Error(result.safeMessage);
+    expect(result.uiSpec.templateId).toBe('restaurant');
+    expect(result.uiSpec.screens[0].components.some(c => c.id === 'results' || c.id === 'category-filter')).toBe(false);
+    expect(result.uiSpec.screens[0].components.find(c => c.id === 'generated-section-0')).toMatchObject({ type: 'card', actions: [] });
+    expect(result.uiSpec.screens[0].components.find(c => c.id === 'presentation-palette')).toMatchObject({ type: 'text', properties: { text: 'warm' }, actions: [] });
+    const form = result.uiSpec.screens[1].components.find(c => c.type === 'form')!;
+    if (form.type === 'form') {
+      expect(form.properties.fields.some(f => f.id === 'reservation-guests')).toBe(false);
+      expect(form.properties.fields.find(f => f.id === 'generated-field-0')).toMatchObject({ type: 'text', label: 'Occasion', required: false });
+    }
+    expect(validateUiSpec(result.uiSpec).success).toBe(true);
+  });
+
+  it('rejects unknown style tokens, unknown field references and inconsistent section plans', async () => {
+    const { input, draft } = await fixture();
+    for (const bad of [
+      { ...draft, style: { ...draft.style, palette: 'url(javascript:bad)' } },
+      { ...draft, form: { ...draft.form, fieldOverrides: [{ id: 'not-a-reviewed-field', enabled: true, label: 'Bad', required: false }] } },
+      { ...draft, structure: { ...draft.structure, sections: ['filter', 'form'] } },
+      { ...draft, form: { ...draft.form, extraFields: [{ type: 'script', label: 'Bad', required: false, options: [] }] } },
+    ]) {
+      expect(await configured(vi.fn<typeof fetch>().mockResolvedValue(response(bad))).generate(input)).toMatchObject({ errorCode: 'INVALID_PROVIDER_RESPONSE', retryable: false });
+    }
+  });
+
+  it('composes a model-selected validated configuration for every reviewed template without a caller choice', async () => {
+    for (const template of TEMPLATE_CATALOG) {
+      const { input, draft } = await fixture(template.id);
+      const transport = vi.fn<typeof fetch>().mockResolvedValue(response(draft));
+      const result = await configured(transport).generate(input);
+      if (!('uiSpec' in result)) throw new Error(template.id + ': ' + result.safeMessage);
+      expect(result.uiSpec.templateId).toBe(template.id);
+      expect(validateUiSpec(result.uiSpec).success).toBe(true);
+      const payload = JSON.parse(String(transport.mock.calls[0][1]?.body));
+      const context = JSON.parse(payload.input[1].content);
+      expect(context.catalog).toHaveLength(20);
+      expect(context).not.toHaveProperty('template');
+    }
   });
 });

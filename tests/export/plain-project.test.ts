@@ -91,4 +91,31 @@ describe('plain source project', () => {
     expect(JSON.parse(d.querySelector('script[type="application/json"]')!.textContent!)).toEqual(spec);
     dom.window.close();
   });
+
+  it('applies only approved output styles and preserves customized sections and fields in plain files', async () => {
+    const spec = await fixture('restaurant');
+    spec.screens[0].components = spec.screens[0].components.filter(c => c.id !== 'results' && c.id !== 'category-filter');
+    for (const [token, value] of [['palette', 'warm'], ['layout', 'stacked'], ['typography', 'sans'], ['density', 'compact']]) {
+      spec.screens[0].components.push({ id: 'presentation-' + token, type: 'text', properties: { text: value }, actions: [] });
+    }
+    spec.screens[0].components.push({ id: 'generated-section-0', type: 'card', properties: { title: 'Private gatherings', body: 'A synthetic private dining concept.' }, actions: [] });
+    const form = spec.screens[1].components.find(c => c.type === 'form')!;
+    if (form.type === 'form') form.properties.fields.push({ id: 'generated-field-0', type: 'text', label: 'Occasion', required: false });
+    const { dom, files } = await openProject(spec), d = dom.window.document;
+    const root = d.querySelector('.template-preview')!;
+    expect(root.classList.contains('presentation-palette-warm')).toBe(true);
+    expect(root.classList.contains('presentation-layout-stacked')).toBe(true);
+    expect(dom.window.getComputedStyle(root).backgroundColor).toBe('rgb(255, 247, 237)');
+    expect(dom.window.getComputedStyle(d.querySelector('.template-hero')!).display).toBe('flex');
+    expect(d.querySelectorAll('tbody tr')).toHaveLength(0);
+    expect(d.getElementById('generated-section-0')?.textContent).toContain('Private gatherings');
+    expect(d.getElementById('presentation-palette')).toBeNull();
+    (d.querySelector('.content-nav button:last-child') as HTMLButtonElement).click();
+    expect(d.querySelector('[name="generated-field-0"]')).not.toBeNull();
+    expect(JSON.parse(files['configuration.json'])).toEqual(spec);
+    dom.window.close();
+    const token = spec.screens[0].components.find(c => c.id === 'presentation-palette')!;
+    if (token.type === 'text') token.properties.text = 'url(javascript:bad)';
+    expect(() => createProjectFiles(spec)).toThrow(/Export blocked/);
+  });
 });

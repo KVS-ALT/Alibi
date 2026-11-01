@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Brief, GenerationRequest, GenerationResult, UiSpec } from '../contracts';
 import { TEMPLATE_CATALOG } from '../templates';
 import { getTemplateScenario } from './scenarios';
+import { STYLE_METADATA_IDS, validStyleMetadata } from '../templates/styleTokens';
 
 export const GENERATOR_MODE = 'Demo generator';
 const text = z.string().max(12000).refine(v => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v), 'Unsupported control character');
@@ -35,6 +36,7 @@ export function validateUiSpec(value:unknown): {success:true;data:UiSpec}|{succe
   let error='';
   const unique=(value:string)=>{if(ids.has(value))error='Duplicate ID';ids.add(value);};
   for(const screen of s.screens){ unique(screen.id); for(const c of screen.components){unique(c.id);
+    if(STYLE_METADATA_IDS.has(c.id) && (c.type!=='text'||!validStyleMetadata(c.id,c.properties.text)))error='Invalid generated presentation token';
     if(c.type==='form') for(const f of c.properties.fields) unique(f.id);
     if(c.type==='navigation') for(const n of c.properties.items) if(!screenIds.has(n.screenId))error='Unknown navigation destination';
     if(c.type==='table') {

@@ -31,7 +31,7 @@ describe('anonymous builder API',()=>{
   expect(booking.components.find((component:{id:string})=>component.id==='contact-form')).toMatchObject({type:'form',properties:{submitLabel:'Save demo reservation'}});
   const config=await client.request(`/api/sessions/${id}/export?format=json`,{headers:{cookie}});expect(await config.json()).toEqual(result.uiSpec);
   const archive=await client.request(`/api/sessions/${id}/export?format=source`,{headers:{cookie}});expect(archive.headers.get('content-type')).toBe('application/zip');expect(new Uint8Array(await archive.arrayBuffer()).slice(0,4)).toEqual(new Uint8Array([80,75,3,4]));
-  const handoff=await client.request(`/api/sessions/${id}/email`,post({recipient:'person@example.com',enabled:true,projectVersion:result.uiSpec.version},cookie));expect(await handoff.json()).toEqual({status:'ready',notSent:true,reason:'email_disabled',publicLinkAvailable:false,artifactAccess:'owner-cookie-required'});
+  const handoff=await client.request(`/api/sessions/${id}/email`,post({recipient:'person@example.com',enabled:true,projectVersion:result.uiSpec.version},cookie));expect(await handoff.json()).toEqual({status:'ready',notSent:true,reason:'email_disabled',publicLinkAvailable:false,artifactAccess:'source-attachment'});
   expect((await client.request(`/api/sessions/${id}/email`,post({recipient:'person@example.com',enabled:true,projectVersion:result.uiSpec.version+1},cookie))).status).toBe(409);
   expect((await client.request(`/api/sessions/${id}/email`,post({recipient:'person@example.com',enabled:false,projectVersion:result.uiSpec.version},cookie))).status).toBe(400);
  });

@@ -1,9 +1,10 @@
-type Kind = 'generation' | 'speech' | 'email';
+type Kind = 'generation' | 'speech' | 'speech-token' | 'email';
 interface Entry { at: number; kind: Kind; session: string; address: string; units: number }
 const limits: Record<Kind, { session: number; address: number; global: number }> = {
  generation: { session: 3, address: 6, global: 20 },
  // Speech units are upload bytes, independent of untrusted duration headers.
  speech: { session: 6 * 1024 * 1024, address: 12 * 1024 * 1024, global: 24 * 1024 * 1024 },
+ 'speech-token': { session: 3, address: 6, global: 20 },
  email: { session: 2, address: 3, global: 10 },
 };
 export function createProviderBudget(now = Date.now) {

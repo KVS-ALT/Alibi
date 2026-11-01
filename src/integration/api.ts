@@ -1,11 +1,11 @@
 import type { GenerationRequest, GenerationResult } from '../contracts';
 
-export type ExecutionMode = 'browser-demo' | 'local-demo' | 'render-local';
+export type ExecutionMode = 'browser-demo' | 'local-demo' | 'render-local' | 'openai' | 'featherless';
 export async function detectExecutionMode(): Promise<ExecutionMode> {
  try {
   const response = await fetch('/api/health', { signal: AbortSignal.timeout(3000) });
   const health = await response.json();
-  return response.ok && health.status === 'ok' && (health.runner === 'local-demo' || health.runner === 'render-local') ? health.runner : 'browser-demo';
+  return response.ok && health.status === 'ok' && (health.runner === 'local-demo' || health.runner === 'render-local' || health.runner === 'openai' || health.runner === 'featherless') ? health.runner : 'browser-demo';
  } catch { return 'browser-demo'; }
 }
 async function post(path: string, body: unknown, signal?: AbortSignal) {

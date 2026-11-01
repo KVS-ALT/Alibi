@@ -11,8 +11,8 @@ const inputSchema = z.object({sessionId:sessionIdSchema,requestId:z.string().min
 export type JobInput = GenerationRequest & {templateId?:string};
 export type StageName = 'template'|'content'|'style'|'assets'|'validate'|'export';
 export type Progress = {stage:StageName|'workflow';status:'running'|'completed';message:string;runId?:string};
-export interface PackageResult {result:GenerationResult;files:Record<string,string>;completedStages:StageName[];generator:'Demo generator'}
-export interface JobRunner {mode:'local-demo'|'render-local';run(input:JobInput,emit:(event:Progress)=>void,signal:AbortSignal):Promise<PackageResult>}
+export interface PackageResult {result:GenerationResult;files:Record<string,string>;completedStages:StageName[];generator:'Demo generator'|'OpenAI'|'Featherless'}
+export interface JobRunner {mode:'local-demo'|'render-local'|'openai'|'featherless';requiresLive?:boolean;generator?:'Demo generator'|'OpenAI'|'Featherless';run(input:JobInput,emit:(event:Progress)=>void,signal:AbortSignal):Promise<PackageResult>}
 
 export function parseJobInput(value:unknown):JobInput {
  const parsed=inputSchema.parse(value);
@@ -41,3 +41,28 @@ export const localRunner:JobRunner={mode:'local-demo',async run(raw,emit,signal)
  const [spec,style,assets]=await Promise.all([step('content',()=>generateContent(input,template)),step('style',()=>resolveStyle(template)),step('assets',()=>resolveAssets(template))]);
  const valid=await step('validate',()=>validateBuild(spec,style,assets));return step('export',()=>packageBuild(input,valid));
 }};
+
+export function createProviderRunner(provider:{generate(request:GenerationRequest,options:{templateId?:string;signal?:AbortSignal}):Promise<GenerationResult>},label:'OpenAI'|'Featherless'='OpenAI'):JobRunner {
+ return {mode:label==='Featherless'?'featherless':'openai',generator:label,requiresLive:true,async run(raw,emit,signal){
+  const input=parseJobInput(raw);signal.throwIfAborted();
+  emit({stage:'template',status:'running',message:'Selecting a reviewed template'});
+  emit({stage:'content',status:'running',message:`Requesting bounded structured content from ${label}`});
+  const generated=await provider.generate({sessionId:input.sessionId,requestId:input.requestId,briefVersion:input.briefVersion,brief:input.brief,previousUiSpec:input.previousUiSpec},{templateId:input.templateId,signal});
+  signal.throwIfAborted();
+  if(!('uiSpec'in generated))return {result:generated,files:{},completedStages:['template'],generator:label};
+  if(generated.sessionId!==input.sessionId||generated.requestId!==input.requestId||generated.briefVersion!==input.briefVersion||generated.uiSpec.sessionId!==input.sessionId||generated.uiSpec.basedOnBriefVersion!==input.briefVersion)throw new Error('Provider result does not match this build.');
+  const templateId=generated.uiSpec.templateId;
+  emit({stage:'template',status:'completed',message:'Reviewed template selected'});
+  emit({stage:'content',status:'completed',message:'Structured content received'});
+  const style=resolveStyle(templateId),assets=resolveAssets(templateId);
+  emit({stage:'style',status:'completed',message:'Reviewed template styling retained'});
+  emit({stage:'assets',status:'completed',message:'Reviewed local assets retained'});
+  emit({stage:'validate',status:'running',message:'Validating the complete prototype configuration'});
+  const valid=validateBuild(generated.uiSpec,style,assets);
+  emit({stage:'validate',status:'completed',message:'Prototype schema and references validated'});
+  emit({stage:'export',status:'running',message:'Building matching standalone and source exports'});
+  const bundle=packageBuild(input,valid);
+  emit({stage:'export',status:'completed',message:'Matching exports ready'});
+  return {...bundle,result:{...generated,uiSpec:valid},generator:label};
+ }};
+}

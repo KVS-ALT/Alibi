@@ -1,45 +1,29 @@
-# Forme — conversation to working prototype
+# Conversation to a working prototype
 
-An anonymous builder with twenty reviewed starting points, consented browser speech capture, interactive previews, and matching offline/source exports. The current generator is a conspicuously labelled deterministic demo using synthetic data. No provider account, API key, login or payment is needed.
+The primary screen starts consented, silent microphone capture. Final speech is assembled into a coherent brief, automatically selects a template, and produces versioned interactive results. There is no manual brief, Build step, or template picker in the primary flow. The optional developer gallery is `/inspect/templates`.
 
-## Run locally
+## Local run
 
-Use Node 22.12 or newer. From this directory:
+Use Node 22.20 or newer compatible LTS. Run `npm ci --include=dev`, `npm run build`, then `npm start`. The server listens on http://127.0.0.1:3001 by default. Existing running sessions do not hot-load `.env` edits. Do not replace a running user's build without coordinating a pause.
 
-```powershell
-npm.cmd ci
-npm.cmd run build
-npm.cmd start
-```
+The current user test sessions were deliberately preserved on ports 3001 and 3002. Their already-loaded bundles can predate the newest source. Localhost URLs are not public phone-share URLs.
 
-Open **http://127.0.0.1:3001/**. This single Node service serves both the built frontend and the anonymous API. Leave the terminal running. Stop it with Ctrl+C.
+## Required real conversation configuration
 
-Optional runtime settings are documented in `.env.example`. The local `.env` is ignored by Git and loaded only on the next manual `npm.cmd start`; editing it does not reload the running server. Blank optional placeholders are commented out to preserve the defaults. The current MVP consumes runtime/local-workflow settings only; ElevenLabs, Agentboxd and AI-provider API-key environment consumers are not wired. Adding credentials to a file does not enable those services or authorize live calls.
+Fill the two dedicated active key fields in the ignored `.env`: `FEATHERLESS_API_KEY` and `SPEECHMATICS_API_KEY`. The chosen nonsecret settings are `GENERATION_PROVIDER=featherless`, `FEATHERLESS_MODEL=Qwen/Qwen2.5-7B-Instruct`, `SPEECH_PROVIDER=speechmatics`, and `SPEECHMATICS_ENABLED=true`. No OpenAI credential is needed for this flow.
 
-Try a brief such as: “Build a studio booking app called Willow Studio. Let visitors filter spaces and send a demo enquiry.” Build, filter the sample spaces, open the booking form, submit synthetic details, use Present, and download the configuration or source ZIP. Start a new session to clear the current conversation and preview.
+Key entry is not authorization for recurring usage. Ordinary starts keep live calls disabled. A separately approved test process must have `LIVE_PROVIDER_CALLS_ENABLED=true`, `--allow-live-providers`, and positive explicit limits such as `--approved-generation-requests=1`, `--approved-speech-tokens=1`, and `--approved-audio-seconds=5`. Actual HTTP attempts, including retries, consume the process budget. Speech uses a server-owned WebSocket proxy with cumulative raw-PCM and wall-time caps; no provider token is exposed to the browser, and the old direct-token endpoint is disabled. Runtime budgets reset on process restart, so they must not be mistaken for a persistent public billing limit.
 
-For frontend development, run `npm.cmd run dev` in another terminal and open http://127.0.0.1:5173/. Its `/api` requests proxy to port 3001. Without the server, this developer view falls back to the clearly labelled browser demo. The default production command uses the real local server pipeline and replays its actual progress events.
+Featherless uses its fixed official chat endpoint and dedicated key, a 3000-token output bound, strict validated composition and no automatic retry. Model choice, safe structure/forms and presentation tokens are allowed; arbitrary scripts, URLs and CSS are not. Offline demo generation remains explicitly separate. Native browser speech and bounded ElevenLabs capture are alternative adapters, not additional required credentials.
 
-## Voice and local data
+## Output and privacy
 
-Select **Start session** to request microphone access. Nothing opens the microphone on page load. Nearby voices may be captured, and browser speech recognition may send audio to the browser provider. Obtain their consent. Mute and End remain visible; “build prototype” builds while capture remains active, and “pause listening” mutes. Typed input always works. Mobile, locked-screen and background capture are not guaranteed. No claim of wearer-only isolation is made.
+Twenty reviewed template scenarios retain filtering, navigation and demo forms. The primary source ZIP contains plain `index.html`, `styles.css`, `app.js` and configuration plus documentation; it opens locally without React, npm or a build. A single-file standalone HTML is also included. Transcripts, raw audio and visitor form entries are not exported.
 
-Final transcript text stays in the current in-memory browser session. The preview configuration and compatible local form state are saved in this browser tab's session storage. The anonymous backend uses an HttpOnly ownership cookie and memory-only sessions with a 30-minute expiry. Server sessions disappear on restart. Prototype demo forms create local receipts only; they do not send bookings, payments or email. Avoid entering private information during testing.
+Sessions are anonymous and cookie-owned, with a 30-minute in-memory build cache. The current waitlist behavior retains the latest tab-local fields and receipt, not a subscriber database. Email attachment, durable projects/Supabase and public sharing are extra capabilities; source modules do not imply that their runtime wiring, credentials or deployment are complete. No localhost QR is presented as public sharing.
 
-The source ZIP includes standalone `index.html`, matching styles/configuration, readable React source, README and roadmap. Open the standalone HTML without installing anything, or follow the included React project instructions. Exported form values start empty; private form entries and transcripts are excluded.
+## Verification and deployment
 
-## Checks and current limits
+Use `npm test -- --configLoader runner --maxWorkers=4 --testTimeout=20000`. The canonical suite passes 237 tests across 36 files. Browser and server TypeScript checks and isolated production builds pass. Tests inject provider transports. The one approved real synthetic test reached a validated Featherless bakery result after Speechmatics transcription; its overall harness still failed an external-font assertion, and fragmented speech exposed an assembly defect. Those defects are fixed locally and replayed without another paid attempt. Do not label that original run as a clean full pass.
 
-```powershell
-npm.cmd test -- --configLoader runner
-npm.cmd run build
-npm.cmd audit
-```
-
-The suite covers capture lifecycle, session isolation and restoration, generation/schema validation, executable offline exports, unsafe input rejection, preview filtering, anonymous HTTP ownership and the workflow task graph. Browser inventories live in `qa/`. Visual checks describe their actual coverage; they are not a production accessibility certification.
-
-The current flow uses `local-demo` server execution. Real Render Workflows definitions are included, but a native Windows CLI/SDK socket error prevented an accepted task run. No real Render run ID or deployed app is claimed. See [server/README.md](server/README.md) for the exact evidence and local-development commands. The Render adapter deliberately permits only local loopback execution. Hosted workflow execution needs a separately authorized configuration and supported runtime.
-
-Email handoff is optional and disabled without configuration. A local URL is not a public project link. No real messages are sent by the default app.
-
-No live deployment, production backend, durable multi-instance store, external AI provider, authentication, real transaction or email delivery is included. A production version needs those choices reviewed for its actual audience and data.
+`render.yaml` describes one Free Node webservice with automatic deploys and providers disabled. The separately created `alibi-demo` service is at https://alibi-demo.onrender.com; deployment of this latest checkpoint must be verified separately. Actual Render Workflows compute is separate, billed, and not provisioned by that file. Native Windows workflow task registration previously failed on the SDK socket; no accepted hosted workflow run is claimed. Persistent provider secrets, paid resources and live usage require their own explicit target/budget approval. No new webservice is needed per conversation.

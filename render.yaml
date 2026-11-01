@@ -1,0 +1,32 @@
+# Free web-service blueprint; live provider usage stays disabled by default.
+# Actual Render Workflows compute is separate and is not provisioned by this file.
+services:
+  - type: web
+    name: alibi-demo
+    runtime: node
+    repo: https://github.com/KVS-ALT/Alibi
+    branch: feature/interactive-builder-mvp
+    region: oregon
+    plan: free
+    numInstances: 1
+    autoDeployTrigger: 'off'
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: '22.20.0'
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: LIVE_PROVIDER_CALLS_ENABLED
+        value: 'false'
+      - key: GENERATION_PROVIDER
+        value: demo
+      - key: SPEECH_PROVIDER
+        value: browser
+      - key: SPEECHMATICS_ENABLED
+        value: 'false'
+      - key: EMAIL_SEND_ENABLED
+        value: 'false'

@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import type { Action, PreviewState, UiComponent, UiSpec } from '../contracts';
 import { templateById } from '../templates';
 import './preview.css';
@@ -9,6 +9,7 @@ export function Preview({spec,state,onAction,onFieldChange}:PreviewProps) {
  const template=templateById(spec.templateId);const copy=getTemplatePresentation(spec);
  const screen=spec.screens.find(s=>s.id===state.activeScreenId)??spec.screens[0];
  const [notice,setNotice]=useState('');const [query,setQuery]=useState('');
+ useEffect(()=>{setNotice('');setQuery('');},[spec.sessionId,spec.templateId]);
  const action=(component:UiComponent)=>{if(component.actions.length)component.actions.forEach(a=>onAction(a,component.id));else setNotice('Selected in this demo.');};
  const render=(component:UiComponent)=>{switch(component.type){
  case 'text':return <p className="content-text" key={component.id}>{component.properties.text}</p>;

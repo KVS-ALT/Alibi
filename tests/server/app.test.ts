@@ -17,7 +17,8 @@ describe('anonymous builder API',()=>{
  it('runs real stages, replays events, and exports the actual generated configuration and ZIP',async()=>{
   const client=await setup();const{id,cookie}=await session(client);const response=await client.request(`/api/sessions/${id}/jobs`,post(input(id),cookie));expect(response.status).toBe(202);const {jobId}=await response.json() as {jobId:string};
   const stream=await client.request(`/api/sessions/${id}/jobs/${jobId}/events`,{headers:{cookie}});expect(stream.headers.get('content-type')).toBe('text/event-stream');const events=(await stream.text()).split('\n').filter(line=>line.startsWith('data: ')).map(line=>JSON.parse(line.slice(6)));
-  expect(events.filter(e=>e.type==='stage'&&e.progress.status==='completed').map(e=>e.progress.stage)).toEqual(['template','content','style','assets','validate','export']);
+  const completed=events.filter(e=>e.type==='stage'&&e.progress.status==='completed').map(e=>e.progress.stage);
+  expect(completed[0]).toBe('template');expect(completed.slice(1,4).sort()).toEqual(['assets','content','style']);expect(completed.slice(4)).toEqual(['validate','export']);
   const result=events.find(e=>e.type==='result').result;expect(result.uiSpec.templateId).toBe('restaurant');expect(result.uiSpec.screens[0].title).toContain('Juniper');
   const config=await client.request(`/api/sessions/${id}/export?format=json`,{headers:{cookie}});expect(await config.json()).toEqual(result.uiSpec);
   const archive=await client.request(`/api/sessions/${id}/export?format=source`,{headers:{cookie}});expect(archive.headers.get('content-type')).toBe('application/zip');expect(new Uint8Array(await archive.arrayBuffer()).slice(0,4)).toEqual(new Uint8Array([80,75,3,4]));

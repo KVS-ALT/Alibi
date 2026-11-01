@@ -10,7 +10,7 @@ class Socket {
 }
 function setup(overrides: Record<string, unknown> = {}) {
   const sockets: Socket[] = [];
-  const tokenProvider = { issueToken: vi.fn(async () => ({ ok: true, token: 'private.jwt.synthetic', url: 'wss://eu.rt.speechmatics.com/v2/' })), cancelSession: vi.fn() };
+  const tokenProvider = { issueToken: vi.fn(async () => ({ ok: true, token: 'private.jwt.synthetic', expiresIn: 60, url: 'wss://eu.rt.speechmatics.com/v2/' } as const)), cancelSession: vi.fn() };
   const createSocket = vi.fn((_url: string) => { const socket = new Socket(); sockets.push(socket); return socket; });
   const proxy = createSpeechmaticsProxy({ enabled: true, liveCallsAllowed: true, maxSessionAudioSeconds: 2, maxGlobalAudioSeconds: 3, maxWallMs: 10000, maxStartsGlobal: 10, ...overrides }, { tokenProvider, createSocket });
   const start = async (sessionId = 's1') => {
@@ -18,7 +18,7 @@ function setup(overrides: Record<string, unknown> = {}) {
     const pending = proxy.start({ sessionId, consented: true });
     await vi.waitFor(() => expect(sockets.length).toBeGreaterThan(before));
     const socket = sockets.at(-1)!; socket.open(); socket.message({ message: 'RecognitionStarted' });
-    const ready = await pending; expect(ready.ok).toBe(true); return { sessionId, streamId: ready.streamId, socket };
+    const ready = await pending; expect(ready.ok).toBe(true); if (!ready.ok) throw new Error('Mock handshake failed'); return { sessionId, streamId: ready.streamId, socket };
   };
   return { proxy, tokenProvider, sockets, createSocket, start };
 }
@@ -67,6 +67,7 @@ describe('server-owned Speechmatics proxy', () => {
   it('emits stable transcripts without credentials, cancels late callbacks and closes upstream when SSE unsubscribes', async () => {
     const { proxy, start } = setup(); const stream = await start(); const events: any[] = [];
     const unsubscribe = proxy.subscribe(stream, (event: unknown) => { events.push(event); });
+    if (!unsubscribe) throw new Error('Mock subscription failed');
     stream.socket.message({ message: 'AddPartialTranscript', metadata: { transcript: 'booking' } });
     stream.socket.message({ message: 'AddTranscript', metadata: { transcript: 'booking page', start_time: 0, end_time: 1 } });
     const segments = events.filter(event => event.type === 'segment').map(event => event.segment);
@@ -81,5 +82,18 @@ describe('server-owned Speechmatics proxy', () => {
     const second = proxy.start({ sessionId: 's2', consented: true }); await Promise.resolve(); proxy.dispose();
     expect(tokenProvider.issueToken).toHaveBeenCalledTimes(1);
     expect(await second).toMatchObject({ ok: false, code: 'stream_start_limit' });
+  });
+  it('waits for provider audio acknowledgement before forcing a final transcript boundary', async () => {
+    const { proxy, start } = setup(); const stream = await start(); proxy.writePcm({ ...stream, audio: new Uint8Array(4096) });
+    const pending = proxy.flush(stream);
+    expect(stream.socket.send.mock.calls.filter(call => typeof call[0] === 'string' && call[0].includes('ForceEndOfUtterance'))).toHaveLength(0);
+    stream.socket.message({ message: 'AudioAdded', seq_no: 1 }); await Promise.resolve(); await Promise.resolve();
+    expect(stream.socket.send).toHaveBeenLastCalledWith(JSON.stringify({ message: 'ForceEndOfUtterance', timestamp: 0.128 }));
+    stream.socket.message({ message: 'EndOfUtterance', forced: true }); expect(await pending).toMatchObject({ ok: true }); proxy.dispose();
+  });
+  it('closes provider backpressure without forwarding another audio frame', async () => {
+    const { proxy, start } = setup(); const stream = await start(); stream.socket.bufferedAmount = 70000;
+    expect(proxy.writePcm({ ...stream, audio: new Uint8Array(4096) })).toMatchObject({ ok: false, code: 'audio_backpressure' });
+    expect(stream.socket.send.mock.calls.filter(call => call[0] instanceof Uint8Array)).toHaveLength(0); expect(stream.socket.close).toHaveBeenCalledTimes(1); proxy.dispose();
   });
 });

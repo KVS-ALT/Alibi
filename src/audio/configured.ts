@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TranscriptSegment } from '../contracts';
 import { useSpeechCapture } from './index';
 import { useProviderCapture } from './provider';
-import { useSpeechmaticsCapture } from './speechmatics';
+import { useSpeechmaticsProxyCapture } from './speechmatics-proxy';
 
 type Provider = 'browser' | 'elevenlabs' | 'speechmatics';
 interface Metadata { provider: Provider; configured: boolean; enabled: boolean }
@@ -16,7 +16,7 @@ export function useConfiguredSpeechCapture(options: ConfiguredSpeechOptions) {
   const restarted = useRef<(() => void) | null>(null);
   const browser = useSpeechCapture({ ...options, lifecycleKey, onBuild: noop, buildPhrase: '', pausePhrase: '' });
   const elevenlabs = useProviderCapture({ ...options, lifecycleKey, onBuild: noop, buildPhrase: '', pausePhrase: '' });
-  const speechmatics = useSpeechmaticsCapture({ ...options, lifecycleKey });
+  const speechmatics = useSpeechmaticsProxyCapture({ ...options, lifecycleKey });
   const controls = useRef({ browser, elevenlabs, speechmatics }); controls.current = { browser, elevenlabs, speechmatics };
   const [metadata, setMetadata] = useState<Metadata | null>(null);
   const [metadataLoading, setMetadataLoading] = useState(true);

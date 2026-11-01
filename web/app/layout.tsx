@@ -32,6 +32,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
+        suppressHydrationWarning // browser extensions (e.g. Grammarly) add attributes to <body>
         className={`${geistSans.variable} ${geistMono.variable} ${serif.variable} antialiased`}
       >
         {children}

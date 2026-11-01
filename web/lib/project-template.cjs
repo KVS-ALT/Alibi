@@ -1,3 +1,5 @@
+// Shared with the dependency-free standalone Node server, which loads CommonJS.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { interactionScript } = require('./template-interactions.cjs');
 // Serve the authored product template itself, never a portfolio/detail-page wrapper.
 function renderProjectTemplate(project, css = '') {

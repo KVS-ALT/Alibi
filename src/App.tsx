@@ -7,7 +7,7 @@ import { Preview } from './ui/Preview';
 import { TemplateCarousel } from './ui/TemplateCarousel';
 import { createAutomaticGenerationQueue } from './ui/automaticGeneration';
 import { createReadyCue } from './ui/readyCue';
-import { acceptGeneration, addSegment, applyAction, beginBuild, createSession, restoreSavedSession, transcriptText, type BuilderSession } from './integration/session';
+import { acceptGeneration, addSegment, applyAction, beginBuild, conversationText, createSession, restoreSavedSession, type BuilderSession } from './integration/session';
 import { detectExecutionMode, generateOnServer } from './integration/api';
 import './ui/styles.css';
 const STORAGE_KEY = 'forme.tab-session.v1';
@@ -35,7 +35,7 @@ export default function App() {
  const addCaptureSegment = useCallback((segment: TranscriptSegment) => {
   if (segment.sessionId !== sessionRef.current.id) return;
   updateSession(previous => addSegment(previous, segment));
-  if (segment.isFinal) queue.current?.update(transcriptText(sessionRef.current));
+  if (segment.isFinal) queue.current?.update(conversationText(sessionRef.current));
  }, [updateSession]);
  const capture = useConfiguredSpeechCapture({ sessionId: session.id, onSegment: addCaptureSegment, onBuild: () => {} });
  const captureRef = useRef(capture); captureRef.current = capture;

@@ -3,8 +3,19 @@ import { z } from 'zod';
 import { validateUiSpec } from '../generation';
 export interface BuilderSession { id: string; transcript: TranscriptSegment[]; briefVersion: number; pending: { requestId: string; briefVersion: number } | null; spec: UiSpec | null; preview: PreviewState | null; error: string | null; }
 export function createSession(): BuilderSession { return { id: crypto.randomUUID(), transcript: [], briefVersion: 0, pending: null, spec: null, preview: null, error: null }; }
-export function addSegment(session: BuilderSession, segment: TranscriptSegment): BuilderSession { if (segment.sessionId !== session.id) return session; const transcript = session.transcript.filter(item => item.segmentId !== segment.segmentId); return { ...session, transcript: [...transcript, segment] }; }
+export function addSegment(session: BuilderSession, segment: TranscriptSegment): BuilderSession {
+ if (segment.sessionId !== session.id) return session;
+ const index = session.transcript.findIndex(item => item.segmentId === segment.segmentId);
+ const transcript = [...session.transcript];
+ if (index < 0) transcript.push(segment); else transcript[index] = segment;
+ return { ...session, transcript };
+}
 export function transcriptText(session: BuilderSession): string { return session.transcript.filter(item => item.isFinal).map(item => item.text).join('\n'); }
+/** A provider chunk is a transport boundary, not a sentence or requirement boundary. */
+export function conversationText(session: BuilderSession): string {
+ return session.transcript.filter(item => item.isFinal).map(item => item.text.trim()).filter(Boolean)
+  .join(' ').replace(/\s+/gu, ' ').replace(/\s+([,.;:!?%\)\]\}])/gu, '$1').replace(/([\(\[\{])\s+/gu, '$1').trim();
+}
 export function beginBuild(session: BuilderSession): BuilderSession { const briefVersion = session.briefVersion + 1; return { ...session, briefVersion, pending: { requestId: crypto.randomUUID(), briefVersion }, error: null }; }
 const primitive = z.union([z.string(), z.number().finite(), z.boolean(), z.null()]);
 const previewSchema = z.object({ sessionId: z.string(), activeScreenId: z.string(), values: z.record(z.string(), primitive), forms: z.record(z.string(), z.record(z.string(), z.string())), filters: z.record(z.string(), z.object({ field: z.string(), stateKey: z.string() })), submitted: z.record(z.string(), z.string()) });

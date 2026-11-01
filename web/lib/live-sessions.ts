@@ -129,7 +129,7 @@ export function ingestTranscript(id:string,segment:{id:string;text:string;isFina
  try{
   const draft=createDraftPortfolio(conversation(session),session.portfolio,{projectRegistry:session.projectRegistry,builderName:session.identity.name,builderSpeaker:session.identity.builderSpeaker});
   session.projectRegistry=draft.projectRegistry;
-  for(const entry of session.projectRegistry.projects){entry.designKey??=session.id+':'+entry.id;const project=draft.portfolio.projects[entry.id];if(project)project.mockHtml=renderProjectMock(project,entry.designKey);}
+  for(const entry of session.projectRegistry.projects){entry.designKey??=session.id+':'+entry.id;const project=draft.portfolio.projects[entry.id];if(project)project.mockHtml=renderProjectMock(project,entry.designKey,entry.description);}
   if(JSON.stringify(draft.portfolio)!==JSON.stringify(session.portfolio)){session.portfolio=draft.portfolio;session.claims=draft.claims;session.version++;session.updatedAt=Date.now();void save(session).catch(()=>{if(!session.deleted)session.error='Portfolio persistence failed.';});}
  }catch{console.info('[alibi:understanding] draft_update_failed');}
  session.revision++;session.updatedAt=Date.now();session.firstDirtyAt??=Date.now();

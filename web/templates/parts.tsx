@@ -74,18 +74,33 @@ function srcDoc(html: string) {
 </head><body>${html}</body></html>`;
 }
 
+const BACKDROPS: Record<string, [string, string, string]> = {
+  emerald: ["#ecfdf5", "#a7f3d0", "#10b981"],
+  indigo: ["#eef2ff", "#c7d2fe", "#6366f1"],
+  sky: ["#f0f9ff", "#bae6fd", "#0ea5e9"],
+  violet: ["#f5f3ff", "#ddd6fe", "#8b5cf6"],
+  orange: ["#fff7ed", "#fed7aa", "#f97316"],
+  rose: ["#fff1f2", "#fecdd3", "#f43f5e"],
+  amber: ["#fffbeb", "#fde68a", "#f59e0b"],
+  teal: ["#f0fdfa", "#99f6e4", "#14b8a6"],
+};
+
+function mockMeta(html: string, seed: string) {
+  const accent = html.match(/data-accent="([a-z]+)"/)?.[1];
+  const kit = html.match(/data-kit="([a-z]+)"/)?.[1];
+  const keys = Object.keys(BACKDROPS);
+  let h = 0;
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return { colors: BACKDROPS[accent ?? ""] ?? BACKDROPS[keys[h % keys.length]], kit };
+}
+
+// Static local HTML and CSS, presented as a framed product shot. Phone and terminal kits provide their own frame.
 export function MockFrame({ html, title = "Project preview", dark = false }: { html: string; title?: string; dark?: boolean }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0);
-  const [kitCss, setKitCss] = useState('');
 
-  useEffect(() => {
-    if (!/data-kit=/.test(html)) return;
-    let cancelled = false;
-    const sheets = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')).filter(link => new URL(link.href).origin === location.origin);
-    Promise.all(sheets.map(async link => { const response = await fetch(link.href); return response.ok ? response.text() : ''; })).then(css => { if (!cancelled) setKitCss(css.join('\n')); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [html]);
+  const { colors, kit } = mockMeta(html, title);
+  const bare = kit === "phone" || kit === "terminal";
 
   useEffect(() => {
     const el = boxRef.current;
@@ -95,28 +110,50 @@ export function MockFrame({ html, title = "Project preview", dark = false }: { h
     return () => ro.disconnect();
   }, []);
 
+  const backdrop = dark
+    ? `radial-gradient(120% 90% at 20% 0%, ${colors[2]}55, transparent 60%), radial-gradient(90% 80% at 100% 100%, ${colors[2]}33, transparent 55%), #0a0a0a`
+    : `radial-gradient(120% 90% at 15% 0%, ${colors[0]}, transparent 60%), linear-gradient(135deg, ${colors[0]}, ${colors[1]})`;
+
+  const screen = (
+    <div ref={boxRef} className="relative w-full" style={{ aspectRatio: `${MOCK_W} / ${MOCK_H}` }}>
+
+      {scale > 0 && (
+        <iframe
+          title={`${title} project preview`}
+          sandbox=""
+          srcDoc={srcDoc(html)}
+          loading="eager"
+
+          tabIndex={-1}
+          className="pointer-events-none absolute left-0 top-0 origin-top-left border-0"
+          style={{ width: MOCK_W, height: MOCK_H, transform: `scale(${scale})` }}
+        />
+      )}
+    </div>
+  );
+
+  if (bare) {
+    return <div className={`overflow-hidden rounded-2xl ${dark ? "ring-1 ring-white/10" : "ring-1 ring-black/5"}`}>{screen}</div>;
+  }
   return (
-    <div
-      className={`overflow-hidden rounded-xl border ${dark ? "border-white/10 bg-neutral-900" : "border-black/10 bg-neutral-100"}`}
-    >
-      <div className={`flex items-center gap-1.5 px-3 py-2 ${dark ? "bg-neutral-900" : "bg-neutral-100"}`}>
-        <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
-        <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
-        <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-        <span className={`ml-3 truncate font-mono text-xs ${dark ? "text-neutral-300" : "text-neutral-600"}`}>{title}</span>
-      </div>
-      <div ref={boxRef} className="relative w-full" style={{ aspectRatio: `${MOCK_W} / ${MOCK_H}` }}>
-        {scale > 0 && (
-          <iframe
-            title={`${title} project preview`}
-            sandbox=""
-            srcDoc={srcDoc(`<style>${kitCss}</style>${html}`)}
-            loading="eager"
-            tabIndex={-1}
-            className="pointer-events-none absolute left-0 top-0 origin-top-left border-0"
-            style={{ width: MOCK_W, height: MOCK_H, transform: `scale(${scale})` }}
-          />
-        )}
+    <div className={`overflow-hidden rounded-2xl px-[5%] pt-[5%] ${dark ? "ring-1 ring-white/10" : "ring-1 ring-black/5"}`} style={{ background: backdrop }}>
+      <div
+        className={`overflow-hidden rounded-t-lg ${dark ? "shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] ring-1 ring-white/10" : "shadow-[0_24px_60px_-12px_rgba(15,23,42,0.35)] ring-1 ring-black/10"}`}
+      >
+        <div className={`flex items-center gap-1.5 px-3 py-2 ${dark ? "bg-neutral-800" : "bg-white"}`}>
+          <span className="h-2 w-2 rounded-full bg-[#ff5f57]" />
+          <span className="h-2 w-2 rounded-full bg-[#febc2e]" />
+          <span className="h-2 w-2 rounded-full bg-[#28c840]" />
+          {title && (
+            <span
+              className={`mx-auto truncate rounded-md px-6 py-0.5 text-xs ${dark ? "bg-neutral-800 text-neutral-300" : "bg-white text-neutral-700"}`}
+            >
+              {title}
+            </span>
+          )}
+          <span className="w-8" />
+        </div>
+        {screen}
       </div>
     </div>
   );
@@ -139,7 +176,7 @@ export function portfolioTitle(name?: string) {
 }
 
 export function projectPreviewHtml(project: ProjectSection) {
-  return project.mockHtml && /\bdata-mock-design\s*=/.test(project.mockHtml)
+  return project.mockHtml && /\bdata-(?:mock-design|kit)\s*=/.test(project.mockHtml)
     ? project.mockHtml
     : renderDesignedProject(project);
 }

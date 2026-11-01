@@ -2,6 +2,7 @@ import { Claims, Portfolio, type ProjectSection } from '@alibi/shared';
 import { isProjectFeatureStatement, mergeProjectHighlights, resolveProjectIdentity, seedProjectRegistry, spokenProjectName, type ProjectIdentityRegistry } from './project-identity';
 import { deriveConversationIdentity, stripPersonalIntroductions } from './conversation-identity';
 import { renderDesignedProject } from './mock-designs';
+import { mockSpecForProject, renderMock } from './mock-kits';
 
 interface Recipe {
  key: string; match: RegExp; name: string; category: string; tagline: string; summary: string;
@@ -38,8 +39,9 @@ function genericFor(clause: string): Recipe {
 function recipeFor(project: ProjectSection) { return recipes.find(recipe => recipe.match.test(`${project.title} ${project.category} ${project.summary}`)) ?? genericFor(project.summary); }
 
 /** Trusted local rendering avoids asking a slow model to generate thousands of HTML tokens. */
-export function renderProjectMock(project: ProjectSection,stableId?:string): string {
- return renderDesignedProject(project,stableId);
+export function renderProjectMock(project: ProjectSection,stableId?:string,context?:string): string {
+ try{return renderMock(mockSpecForProject(project,context,stableId));}
+ catch{return renderDesignedProject(project,stableId);}
 }
 
 /** Deterministic fictional detail, grounded in the stated product rather than a generic placeholder. */
@@ -88,12 +90,12 @@ export function createDraftPortfolio(transcript: string, previous?: Portfolio,op
     const project=existing;project.title=identity.name;
     const userCount=clause.match(/\b(\d{1,4})\s+(?:pilot\s+)?(?:users|testers|learners|members)\b/i);
     if(userCount){const metric=project.metrics.find(metric=>/user|tester|learner|member/i.test(metric.label));if(metric)metric.value=userCount[1];}
-    project.mockHtml=renderProjectMock(project,identity.designKey??identity.id);continue;
+    project.mockHtml=renderProjectMock(project,identity.designKey??identity.id,identity.description);continue;
    }
    if (Object.keys(portfolio.projects).length>=3) break;
    const name = identity.name;
    const project: ProjectSection = {status:'ready',title:name,category:recipe.category,year:new Date().getUTCFullYear(),tagline:recipe.tagline,summary:recipe.summary,highlights:[...recipe.highlights],metrics:recipe.metrics.map(([label,value])=>({label,value})),stack:[...recipe.stack]};
-   project.mockHtml=renderProjectMock(project,identity.designKey??identity.id);portfolio.projects[identity.id]=project;
+   project.mockHtml=renderProjectMock(project,identity.designKey??identity.id,identity.description);portfolio.projects[identity.id]=project;
  }
  for(const identity of projectRegistry.projects){
   const project=portfolio.projects[identity.id];if(!project)continue;
@@ -102,7 +104,7 @@ export function createDraftPortfolio(transcript: string, previous?: Portfolio,op
   details.set('product brief',{label:'Product brief',value:identity.description.slice(0,600)});
   if(!details.has('prototype approach'))details.set('prototype approach',{label:'Prototype approach',value:`Prototype built with ${project.stack.join(', ')}. ${project.highlights[0]}`.slice(0,600)});
   project.details=[...details.values()].slice(-8);
-  project.mockHtml=renderProjectMock(project,identity.designKey??identity.id);
+  project.mockHtml=renderProjectMock(project,identity.designKey??identity.id,identity.description);
  }
  const projects=Object.entries(portfolio.projects);
  const spokenName=personalIdentity;

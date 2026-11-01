@@ -1,4 +1,6 @@
 import { z } from "zod";
+import type { ProjectSection } from '@alibi/shared';
+import { MOCK_KIT_CSS } from './mock-kit-styles';
 
 // Hand-built mock product UIs ("kits"). The agent picks a kit and fills a MockSpec; renderMock turns it
 // into the static Tailwind HTML that MockFrame shows in a sandboxed iframe at 960x600. All text is escaped,
@@ -6,7 +8,6 @@ import { z } from "zod";
 
 export const KITS = ["dashboard", "cards", "phone", "terminal", "chat", "extension"] as const;
 export const ACCENTS = ["emerald", "indigo", "sky", "violet", "orange", "rose", "amber", "teal"] as const;
-type Accent = (typeof ACCENTS)[number];
 type Status = "good" | "warn" | "bad" | "neutral";
 
 const s = (max: number, fallback = "") => z.coerce.string().trim().transform((v) => v.slice(0, max)).catch(fallback);
@@ -202,9 +203,33 @@ function extension(m: Spec) {
 const RENDER: Record<MockSpec["kit"], (m: Spec) => string> = { dashboard, cards, phone, terminal, chat, extension };
 
 export function renderMock(spec: MockSpec): string {
-  const m = normalize(spec);
+  const m = normalize(MockSpec.parse(spec));
   // Tag the root so MockFrame can match the backdrop to the kit and accent.
-  return RENDER[m.kit](m).replace(/\n/g, "").replace(/^<div /, `<div data-kit="${m.kit}" data-accent="${m.accent}" `);
+  return `<style>${MOCK_KIT_CSS}</style>` + RENDER[m.kit](m).replace(/\n/g, "").replace(/^<div /, `<div data-kit="${m.kit}" data-accent="${m.accent}" `);
+}
+
+/** Populate the original hand-built layouts with this product's own bounded facts. */
+export function mockSpecForProject(project: ProjectSection, context = '', stableId?: string): MockSpec {
+  const clean = (value: string) => value.replace(/https?:\/\/\S+|\b(?:www\.)?[\w-]+(?:\.[\w-]+)*\.(?:com|org|net|io|ai|app|dev|co|xyz)(?:\/\S*)?/gi, '').trim();
+  const evidence = [context, project.title, project.category, project.tagline, project.summary, ...project.highlights, ...(project.details ?? []).map(d => `${d.label} ${d.value}`)].join(' ').toLowerCase();
+  const has = (pattern: RegExp) => pattern.test(evidence);
+  const kit: MockSpec['kit'] = has(/\b(?:mobile(?: app)?|ios|android|iphone|react native|flutter)\b/) ? 'phone'
+    : has(/\b(?:bot|chatbot)\b/) ? 'chat'
+    : has(/\b(?:cli|command.line|terminal|sdk|software library|component library|npm package|python package)\b/) ? 'terminal'
+    : has(/\b(?:extension|browser add.on)\b/) ? 'extension'
+    : has(/\b(?:marketplace|catalog|booking|matchmaking|matching|shop|courses|groups)\b/) ? 'cards' : 'dashboard';
+  let hash = 2166136261;
+  for (const char of stableId ?? project.title) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
+  const rows = has(/\b(?:car|vehicle|dealer|automotive)\b/) ? ['Compact hatchback', 'Electric crossover', 'Family sedan', 'Hybrid wagon']
+    : has(/\b(?:cad|hardware|circuit|robot|prototype)\b/) ? ['Assembly revision', 'Clearance review', 'Material estimate', 'Prototype check']
+    : has(/\b(?:school|student|study|education|course|learning)\b/) ? ['Practice session', 'Concept review', 'Study group', 'Progress check']
+    : has(/\b(?:fitness|yoga|workout|health|training)\b/) ? ['Morning session', 'Weekly routine', 'Progress review', 'Upcoming booking']
+    : has(/\b(?:finance|budget|invoice|payment|expense)\b/) ? ['Monthly summary', 'Recent transaction', 'Category review', 'Pending entry']
+    : has(/\b(?:dog|pet|walking)\b/) ? ['Morning walk', 'Neighborhood route', 'Afternoon booking', 'Weekly schedule']
+    : ['Recent activity', 'Current workflow', 'Saved result', 'Next milestone'];
+  const details = project.details ?? [];
+  const items = rows.map((title, index) => ({ title, subtitle: clean(details[index]?.value ?? project.highlights[index % Math.max(1, project.highlights.length)] ?? project.tagline), meta: '', tag: ['Ready', 'In progress', 'Reviewed', 'Scheduled'][index], status: index === 1 ? 'warn' as const : 'good' as const }));
+  return MockSpec.parse({ kit, theme: hash % 2 ? 'light' : 'dark', accent: ACCENTS[hash % ACCENTS.length], appName: clean(project.title), context: clean(project.category), nav: kit === 'chat' ? ['Updates', 'Activity', 'Commands', 'Settings'] : ['Overview', 'Activity', 'Insights', 'Settings'], heading: clean(project.tagline || project.title), action: kit === 'terminal' ? 'run' : kit === 'chat' ? 'summary' : 'Open', stats: project.metrics.map(metric => ({ label: clean(metric.label), value: clean(metric.value), note: '' })), items, callout: clean(project.summary), user: 'you' });
 }
 
 // Reference specs: shown on /preview/kits and used as the example in the agent prompt.

@@ -32,7 +32,11 @@ export function createHttpSpeechmaticsProxyTransport(fetcher: typeof fetch = fet
   const base = (id: string) => `/api/sessions/${encodeURIComponent(id)}/speech`;
   async function post(url: string, body: BodyInit, signal: AbortSignal, headers: HeadersInit = { 'Content-Type': 'application/json' }) {
     const response = await bounded(fetcher(url, { method: 'POST', credentials: 'same-origin', redirect: 'error', signal, headers, body }), signal, 20_000);
-    if (!response.ok) throw new Error(safeError);
+    if (!response.ok) {
+      const error = await bounded(response.json(), signal, 20_000).catch(() => null) as { code?: unknown; error?: { code?: unknown } } | null;
+      const code = error?.code ?? error?.error?.code;
+      throw Object.assign(new Error(safeError), { code: typeof code === 'string' && /^[a-z][a-z0-9_]{0,63}$/i.test(code) ? code.toLowerCase() : `http_${response.status}` });
+    }
     return bounded(response.json(), signal, 20_000) as Promise<{ ok?: boolean; streamId?: unknown }>;
   }
   return {
@@ -87,24 +91,35 @@ export function createSpeechmaticsProxyCapture(options: ProxyCaptureOptions, dep
   let snapshot: CaptureSnapshot & { errorCode?: string } = { status: 'idle', supported, starting: false, interimText: '' };
   let consented = false, live = false, disposed = false, version = 0;
   let abort = new AbortController(), identity: ProxyIdentity | undefined, source: PcmSource | undefined, events: { close(): void } | undefined;
-  let queue = { bytes: 0, promise: Promise.resolve() };
+  // Batch pending audio so one slow HTTP request does not exhaust a four-chunk queue.
+  const MAX_UPLOAD_BYTES = 48000, MAX_BACKLOG_BYTES = 320000;
+  let backlog: Uint8Array[] = [], backlogBytes = 0, uploader: Promise<void> | null = null;
   const update = (patch: Partial<typeof snapshot>) => { snapshot = { ...snapshot, ...patch }; listeners.forEach(listener => listener()); };
   const valid = (epoch: number) => live && !disposed && version === epoch;
   function stopLocal() {
     live = false; version++; abort.abort(); source?.stop(); source = undefined; events?.close(); events = undefined;
-    const previous = identity; identity = undefined; queue = { bytes: 0, promise: Promise.resolve() };
+    const previous = identity; identity = undefined; backlog = []; backlogBytes = 0; uploader = null;
     if (previous) void transport.end(previous).catch(() => {});
   }
   function mute() { if (!consented || snapshot.status === 'ended' || !live && !snapshot.starting) return; stopLocal(); update({ status: 'muted', starting: false, interimText: '' }); }
   function fail(code: string) { mute(); update({ status: 'muted', starting: false, interimText: '', error: safeError, errorCode: code }); }
   function enqueue(bytes: Uint8Array, epoch: number) {
     if (!valid(epoch) || !identity) return;
-    if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length % 2 || bytes.length > 16384 || queue.bytes + bytes.length > 32000) { fail('audio_backpressure'); return; }
-    const pending = queue, destination = identity, audio = new Uint8Array(bytes), signal = abort.signal;
-    pending.bytes += audio.length;
-    pending.promise = pending.promise.then(async () => {
-      if (valid(epoch)) await bounded(transport.writePcm(destination, audio, signal), signal, 10_000);
-    }).catch(() => { if (valid(epoch)) fail('upload_failed'); }).finally(() => { pending.bytes -= audio.length; });
+    if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length % 2 || bytes.length > 65536 || backlogBytes + bytes.length > MAX_BACKLOG_BYTES) { fail('audio_backpressure'); return; }
+    backlog.push(new Uint8Array(bytes)); backlogBytes += bytes.length;
+    if (!uploader) { const run: Promise<void> = pump(epoch).finally(() => { if (uploader === run) uploader = null; }); uploader = run; }
+  }
+  async function pump(epoch: number) {
+    const destination = identity!, signal = abort.signal;
+    while (valid(epoch) && backlogBytes > 0) {
+      const parts: Uint8Array[] = []; let size = 0;
+      while (backlog.length && (size === 0 || size + backlog[0].length <= MAX_UPLOAD_BYTES)) { const part = backlog.shift()!; parts.push(part); size += part.length; }
+      backlogBytes -= size;
+      const audio = new Uint8Array(size); let offset = 0;
+      for (const part of parts) { audio.set(part, offset); offset += part.length; }
+      try { await bounded(transport.writePcm(destination, audio, signal), signal, 10_000); }
+      catch { if (valid(epoch)) fail('upload_failed'); return; }
+    }
   }
   async function activate(resuming: boolean) {
     if (disposed || snapshot.status === 'ended' || live || snapshot.starting || resuming && !consented || !resuming && consented) return;
@@ -123,14 +138,18 @@ export function createSpeechmaticsProxyCapture(options: ProxyCaptureOptions, dep
       if (!valid(epoch)) { subscription.close(); return; } events = subscription;
       const acquired = await openAudio(bytes => enqueue(bytes, epoch), abort.signal);
       if (!valid(epoch)) { acquired.stop(); return; } source = acquired; update({ status: 'listening', starting: false });
-    } catch { if (valid(epoch)) fail('capture_unavailable'); }
+    } catch (error) {
+      const code = (error as { code?: unknown })?.code;
+      if (valid(epoch)) fail(typeof code === 'string' && /^[a-z][a-z0-9_]{0,63}$/i.test(code) ? code.toLowerCase() : 'capture_unavailable');
+    }
   }
   async function flush() {
     if (!live || !identity || !source) return;
     const epoch = version;
     try {
       await bounded(Promise.resolve(source.flush()), abort.signal, 1000);
-      await bounded(queue.promise, abort.signal, 10_000);
+      const deadline = Date.now() + 10_000;
+      while (uploader) await bounded(uploader, abort.signal, Math.max(1, deadline - Date.now()));
       if (valid(epoch) && identity) await bounded(transport.flush(identity, abort.signal), abort.signal, 11_000);
     } catch { if (valid(epoch)) fail('flush_failed'); throw new Error(safeError); }
   }

@@ -176,9 +176,9 @@ export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependen
     if (!stream || !session) return fail('stream_not_found');
     if (stream.phase !== 'active') return fail(stream.reason ?? 'stream_inactive');
     const bytes = input.audio?.byteLength;
-    if (!(input.audio instanceof Uint8Array) || !bytes || bytes > 16384 || bytes % 2) { finish(stream, 'invalid_audio'); return fail('invalid_audio'); }
+    if (!(input.audio instanceof Uint8Array) || !bytes || bytes > 65536 || bytes % 2) { finish(stream, 'invalid_audio'); return fail('invalid_audio'); }
     if (session.bytes + bytes > sessionCap || globalBytes + bytes > globalCap) { finish(stream, 'audio_limit'); return fail('audio_limit'); }
-    if (!stream.socket || stream.socket.readyState !== 1 || stream.socket.bufferedAmount > 65536 || stream.outstanding.reduce((sum, count) => sum + count, 0) + bytes > 320000 || stream.sent - stream.acknowledged >= 500) { finish(stream, 'audio_backpressure'); return fail('audio_backpressure'); }
+    if (!stream.socket || stream.socket.readyState !== 1 || stream.socket.bufferedAmount > 262144 || stream.outstanding.reduce((sum, count) => sum + count, 0) + bytes > 320000 || stream.sent - stream.acknowledged >= 500) { finish(stream, 'audio_backpressure'); return fail('audio_backpressure'); }
     // Reserve before sending. Failed or uncertain sends still consume this process's approved allowance.
     session.bytes += bytes; globalBytes += bytes; stream.bytes += bytes; stream.sent++; stream.outstanding.push(bytes);
     try { stream.socket.send(input.audio); } catch { finish(stream, 'connection_error'); return fail('connection_error'); }

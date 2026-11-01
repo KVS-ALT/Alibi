@@ -13,13 +13,6 @@ export default function ProjectApp({ project, theme, storageKey, back }: { proje
   const [query, setQuery] = useState('');
   const [title, setTitle] = useState('');
   const [tab, setTab] = useState('Workspace');
-  const [previewCss, setPreviewCss] = useState('');
-  useEffect(() => {
-    let cancelled = false;
-    const sheets = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')).filter(link => new URL(link.href).origin === location.origin);
-    Promise.all(sheets.map(async link => { const response = await fetch(link.href); return response.ok ? response.text() : ''; })).then(css => { if (!cancelled) setPreviewCss(css.join('\n')); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
   useEffect(() => {
     try {
       const saved: unknown = JSON.parse(localStorage.getItem(storageKey) || 'null');
@@ -60,7 +53,7 @@ export default function ProjectApp({ project, theme, storageKey, back }: { proje
           <p className={`text-sm ${muted}`}>Changes are saved in this browser. This prototype uses sample data.</p>
         </div>
       </section>}
-      {tab === 'Product preview' && <section aria-label="Product preview"><MockFrame html={`<style>${previewCss}</style>${renderMock(spec)}`} title={project.title} dark={dark} /></section>}
+      {tab === 'Product preview' && <section aria-label="Product preview"><MockFrame html={renderMock(spec)} title={project.title} dark={dark} /></section>}
       {tab === 'About' && <section aria-label="About project" className={`space-y-6 rounded-xl border p-6 ${panel}`}><h2 className="text-2xl font-semibold">About {project.title}</h2><p>{project.summary}</p><dl className="space-y-4">{project.details?.map(detail => <div key={detail.label}><dt className="font-semibold">{detail.label}</dt><dd className={muted}>{detail.value}</dd></div>)}</dl><p className={muted}>{project.stack.join(' / ')}</p></section>}
     </div>
   </main>;

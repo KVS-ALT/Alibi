@@ -13,10 +13,10 @@ export default function KitPreview() {
           {KITS.flatMap((kit) =>
             (["dark", "light"] as const).map((theme) => (
               <section key={kit + theme}>
-                <div className="mb-2 font-mono text-xs text-neutral-500">
+                <h2 className="mb-2 font-mono text-sm text-neutral-700">
                   {kit} · {theme}
-                </div>
-                <MockFrame html={renderMock({ ...KIT_SAMPLES[kit], theme })} title={KIT_SAMPLES[kit].appName} />
+                </h2>
+                <MockFrame html={renderMock({ ...KIT_SAMPLES[kit], theme })} title={KIT_SAMPLES[kit].appName} dark={theme === "dark"} />
               </section>
             )),
           )}

@@ -51,11 +51,13 @@ export async function openSpeechmaticsPcmSource(send: (pcm: Uint8Array) => void,
     class SpeechPcm extends AudioWorkletProcessor {
       constructor(){super();this.samples=[];this.port.onmessage=e=>{if(e.data.flush){this.emit();this.port.postMessage({flushed:e.data.flush});}};}
       emit(){if(this.samples.length){const data=new Float32Array(this.samples);this.samples=[];this.port.postMessage({samples:data},[data.buffer]);}}
-      process(inputs){const channels=inputs[0];if(channels?.length){for(let i=0;i<channels[0].length;i++){let sum=0;for(const channel of channels)sum+=channel[i];this.samples.push(sum/channels.length);}if(this.samples.length>=2048)this.emit();}return true;}
+      process(inputs){const channels=inputs[0];if(channels?.length){for(let i=0;i<channels[0].length;i++){let sum=0;for(const channel of channels)sum+=channel[i];this.samples.push(sum/channels.length);}if(this.samples.length>=sampleRate/4)this.emit();}return true;}
     } registerProcessor('speechmatics-pcm',SpeechPcm);
   `], { type: 'text/javascript' }));
   try {
-    context = new AudioContext({ sampleRate: 16000 });
+    // Firefox requires the microphone and AudioContext to share their native rate.
+    // encodeMonoPcmWav resamples these chunks to the provider's 16 kHz PCM format.
+    context = new AudioContext();
     await bounded(context.audioWorklet.addModule(moduleUrl), signal, 10_000);
     if (signal.aborted) throw new Error(safeError);
     node = new AudioWorkletNode(context, 'speechmatics-pcm');

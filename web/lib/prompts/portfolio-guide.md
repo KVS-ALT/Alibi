@@ -5,9 +5,9 @@ This guide is included in every generation prompt. It sets the standard the port
 ## Names and identity
 
 - **Person:** use the name exactly as the speaker said it. Never invent a surname. If no name was said, leave it empty. Do not use placeholders like "Alex" or "Your portfolio".
-- **Handle:** lowercase first name plus surname or initial, letters only (for example `priyas`, `samrivera`).
-- **Project names:** keep the speaker's exact spelling and capitalization ("shipit", "StudyMatch"). Speech-to-text may split or merge words; join them back the way a product would be written ("study match" becomes "StudyMatch").
-- **Unnamed projects:** if a project has no name, invent a short, brandable one-word name that fits the product (for example "Ledgerly" or "Repwise"). Never use descriptive labels like "Expense tracker app".
+- **Handle:** derive only from the confirmed spoken name; never invent a surname or identity. The application controls identity fields.
+- **Project names:** keep the speaker's exact spelling and capitalization ("shipit", "StudyMatch"). Never silently join, rebrand or normalize a possible mishear. Only an explicit spoken correction can change a registered name; preserve its internal ID.
+- **Unnamed projects:** keep the registered descriptive label (for example "Expense tracker app"). Never invent a product brand.
 - **Separate projects:** only create one when the speaker clearly describes another thing they built. A feature ("it also sends alerts") belongs to the existing project.
 
 ## Hero
@@ -52,3 +52,9 @@ This guide is included in every generation prompt. It sets the standard the port
 The portfolio reads like a capable student wrote it about their own work: specific, modest and technical. No marketing language ("revolutionary", "seamless", "cutting-edge"). Stay consistent: the same numbers in the summary, the metrics and the mock.
 
 Examples in this guide describe other people's projects. Use them for style only; never copy their names, numbers or wording.
+
+## Application authority and live output limits
+
+Registered builder identity, project IDs and project names are authoritative. A personal introduction, greeting, question or incomplete “I am building” is never a project. Features stay under their existing product unless standalone product intent is clear. Ambiguous spellings keep the current identity. Never ask questions or create confirmation UI. Never invent URLs, domains, repository addresses or contacts.
+
+The application supplies the hero identity, projects and product screens locally. This guide describes the quality of the complete portfolio, not a requirement to generate every field on each turn. The current generation contract takes priority: return only its allowed fields, favor two concise technical details per project, and stay within its word and token limits. Do not output names, titles, HTML, diagrams or metrics when the compact contract excludes them. Sample names and figures above are style references, not evidence.

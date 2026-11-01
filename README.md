@@ -1,6 +1,6 @@
 # Alibi
 
-The team app uses the authoritative `shared/schema.ts` Portfolio/Claims contract and the three existing Next.js portfolio templates. Speechmatics transcription drives coalesced server-side Featherless generation. The agent enriches validated project data; local code renders 100 static HTML design presets inside sandboxed previews. No per-project redeploy is needed. See [static designs and compact generation](docs/static-project-designs.md) and [the conversation test script](docs/manual-conversation-test.md).
+The team app uses the authoritative `shared/schema.ts` Portfolio/Claims contract and the three existing Next.js portfolio templates. Speechmatics transcription drives coalesced server-side Featherless generation. The agent enriches validated project data; local code renders six Claude-designed platform kits inside sandboxed previews, with the 100-design catalog retained as a fallback. The portfolio writing guide is included in generation prompts. No per-project redeploy is needed. See [static designs and compact generation](docs/static-project-designs.md) and [the conversation test script](docs/manual-conversation-test.md).
 
 Install with `npm ci --include=dev`, build with `npm run build:web`, and start with `npm run start:web -- --hostname 127.0.0.1 --port 3005`. The `/preview` gallery and `/p/demo-backup` are explicit fixtures. Unknown public slugs return404. Actual generated portfolios are available at their opaque `/p/<slug>` link; no QR encoder is currently installed.
 

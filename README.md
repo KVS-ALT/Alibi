@@ -14,6 +14,8 @@ npm.cmd start
 
 Open **http://127.0.0.1:3001/**. This single Node service serves both the built frontend and the anonymous API. Leave the terminal running. Stop it with Ctrl+C.
 
+Optional runtime settings are documented in `.env.example`. The local `.env` is ignored by Git and loaded only on the next manual `npm.cmd start`; editing it does not reload the running server. Blank optional placeholders are commented out to preserve the defaults. The current MVP consumes runtime/local-workflow settings only; ElevenLabs, Agentboxd and AI-provider API-key environment consumers are not wired. Adding credentials to a file does not enable those services or authorize live calls.
+
 Try a brief such as: “Build a studio booking app called Willow Studio. Let visitors filter spaces and send a demo enquiry.” Build, filter the sample spaces, open the booking form, submit synthetic details, use Present, and download the configuration or source ZIP. Start a new session to clear the current conversation and preview.
 
 For frontend development, run `npm.cmd run dev` in another terminal and open http://127.0.0.1:5173/. Its `/api` requests proxy to port 3001. Without the server, this developer view falls back to the clearly labelled browser demo. The default production command uses the real local server pipeline and replays its actual progress events.

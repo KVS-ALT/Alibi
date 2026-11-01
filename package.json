@@ -8,7 +8,7 @@
     "test": "vitest run",
     "preview": "vite preview --host 127.0.0.1",
     "build": "tsc -b && vite build && tsc -p tsconfig.server.json && vite build --config vite.server.config.ts",
-    "start": "node dist-server/index.js",
+    "start": "node --env-file-if-exists=.env dist-server/index.js",
     "dev:server": "vite build --config vite.server.config.ts && node --watch dist-server/index.js",
     "workflows:dev": "render workflows dev -- node dist-server/workflows.js",
     "workflows:start": "node dist-server/workflows.js"

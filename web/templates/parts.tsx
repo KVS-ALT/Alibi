@@ -60,25 +60,53 @@ export function CommitGraph({ data, colors }: { data: number[]; colors: [string,
   );
 }
 
-// Agent-written mock UI. It is untrusted HTML, so it runs in a sandboxed iframe with no same-origin access,
-// a CSP that only allows the pinned Tailwind build, and no network for images. Rendered at a fixed
-// "desktop" size and scaled down so it reads like a screenshot.
 const MOCK_W = 960;
 const MOCK_H = 600;
 const TAILWIND = "https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.18/dist/index.global.js";
 
+const FONT = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap";
+
 function srcDoc(html: string) {
   return `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${TAILWIND}; style-src 'unsafe-inline'; img-src data:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${TAILWIND}; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:">
+<link rel="stylesheet" href="${FONT}">
 <script src="${TAILWIND}"></script>
-<style>html,body{margin:0;width:${MOCK_W}px;height:${MOCK_H}px;overflow:hidden;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}</style>
+<style>html,body{margin:0;width:${MOCK_W}px;height:${MOCK_H}px;overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:-0.005em}</style>
 </head><body>${html}</body></html>`;
 }
 
+// Backdrop colors per accent: [light from, light to, accent]. Kits tag their root with data-accent;
+// hand-written mocks without one get a stable accent from their URL.
+const BACKDROPS: Record<string, [string, string, string]> = {
+  emerald: ["#ecfdf5", "#a7f3d0", "#10b981"],
+  indigo: ["#eef2ff", "#c7d2fe", "#6366f1"],
+  sky: ["#f0f9ff", "#bae6fd", "#0ea5e9"],
+  violet: ["#f5f3ff", "#ddd6fe", "#8b5cf6"],
+  orange: ["#fff7ed", "#fed7aa", "#f97316"],
+  rose: ["#fff1f2", "#fecdd3", "#f43f5e"],
+  amber: ["#fffbeb", "#fde68a", "#f59e0b"],
+  teal: ["#f0fdfa", "#99f6e4", "#14b8a6"],
+};
+
+function mockMeta(html: string, seed: string) {
+  const accent = html.match(/data-accent="([a-z]+)"/)?.[1];
+  const kit = html.match(/data-kit="([a-z]+)"/)?.[1];
+  const keys = Object.keys(BACKDROPS);
+  let h = 0;
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return { colors: BACKDROPS[accent ?? ""] ?? BACKDROPS[keys[h % keys.length]], kit };
+}
+
+// Agent-written mock UI. It is untrusted HTML, so it runs in a sandboxed iframe with no same-origin access
+// and a CSP that only allows the pinned Tailwind build and Inter. It renders at a fixed desktop size,
+// scaled down and presented like a product shot: a window floating on an accent-colored backdrop.
+// Phone and terminal kits bring their own device/window and fill the backdrop edge to edge.
 export function MockFrame({ html, url, dark = false }: { html: string; url?: string; dark?: boolean }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  const { colors, kit } = mockMeta(html, url ?? html.slice(0, 64));
+  const bare = kit === "phone" || kit === "terminal";
 
   useEffect(() => {
     const el = boxRef.current;
@@ -88,36 +116,50 @@ export function MockFrame({ html, url, dark = false }: { html: string; url?: str
     return () => ro.disconnect();
   }, []);
 
+  const backdrop = dark
+    ? `radial-gradient(120% 90% at 20% 0%, ${colors[2]}55, transparent 60%), radial-gradient(90% 80% at 100% 100%, ${colors[2]}33, transparent 55%), #0a0a0a`
+    : `radial-gradient(120% 90% at 15% 0%, ${colors[0]}, transparent 60%), linear-gradient(135deg, ${colors[0]}, ${colors[1]})`;
+
+  const screen = (
+    <div ref={boxRef} className="relative w-full" style={{ aspectRatio: `${MOCK_W} / ${MOCK_H}` }}>
+      {!loaded && <div className={`absolute inset-0 animate-pulse ${dark ? "bg-white/5" : "bg-black/5"}`} />}
+      {scale > 0 && (
+        <iframe
+          title={url ?? "project preview"}
+          sandbox="allow-scripts"
+          srcDoc={srcDoc(html)}
+          loading="lazy"
+          onLoad={() => setLoaded(true)}
+          tabIndex={-1}
+          className="pointer-events-none absolute left-0 top-0 origin-top-left border-0 transition-opacity duration-500"
+          style={{ width: MOCK_W, height: MOCK_H, transform: `scale(${scale})`, opacity: loaded ? 1 : 0 }}
+        />
+      )}
+    </div>
+  );
+
+  if (bare) {
+    return <div className={`overflow-hidden rounded-2xl ${dark ? "ring-1 ring-white/10" : "ring-1 ring-black/5"}`}>{screen}</div>;
+  }
   return (
-    <div
-      className={`overflow-hidden rounded-xl border ${dark ? "border-white/10 bg-neutral-900" : "border-black/10 bg-neutral-100"}`}
-    >
-      <div className={`flex items-center gap-1.5 px-3 py-2 ${dark ? "bg-neutral-900" : "bg-neutral-100"}`}>
-        <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
-        <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
-        <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-        {url && (
-          <span
-            className={`ml-3 truncate rounded-md px-2 py-0.5 font-mono text-[10px] ${dark ? "bg-white/5 text-white/50" : "bg-black/5 text-black/60"}`}
-          >
-            {url}
-          </span>
-        )}
-      </div>
-      <div ref={boxRef} className="relative w-full" style={{ aspectRatio: `${MOCK_W} / ${MOCK_H}` }}>
-        {!loaded && <div className={`absolute inset-0 animate-pulse ${dark ? "bg-white/5" : "bg-black/5"}`} />}
-        {scale > 0 && (
-          <iframe
-            title={url ?? "project preview"}
-            sandbox="allow-scripts"
-            srcDoc={srcDoc(html)}
-            loading="lazy"
-            onLoad={() => setLoaded(true)}
-            tabIndex={-1}
-            className="pointer-events-none absolute left-0 top-0 origin-top-left border-0 transition-opacity duration-500"
-            style={{ width: MOCK_W, height: MOCK_H, transform: `scale(${scale})`, opacity: loaded ? 1 : 0 }}
-          />
-        )}
+    <div className={`overflow-hidden rounded-2xl px-[5%] pt-[5%] ${dark ? "ring-1 ring-white/10" : "ring-1 ring-black/5"}`} style={{ background: backdrop }}>
+      <div
+        className={`overflow-hidden rounded-t-lg ${dark ? "shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] ring-1 ring-white/10" : "shadow-[0_24px_60px_-12px_rgba(15,23,42,0.35)] ring-1 ring-black/10"}`}
+      >
+        <div className={`flex items-center gap-1.5 px-3 py-2 ${dark ? "bg-neutral-800" : "bg-white"}`}>
+          <span className="h-2 w-2 rounded-full bg-[#ff5f57]" />
+          <span className="h-2 w-2 rounded-full bg-[#febc2e]" />
+          <span className="h-2 w-2 rounded-full bg-[#28c840]" />
+          {url && (
+            <span
+              className={`mx-auto truncate rounded-md px-6 py-0.5 text-[10px] ${dark ? "bg-white/5 text-white/50" : "bg-black/[0.04] text-black/50"}`}
+            >
+              {url}
+            </span>
+          )}
+          <span className="w-8" />
+        </div>
+        {screen}
       </div>
     </div>
   );

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Portfolio, ProjectSection } from "@alibi/shared";
+import ProjectQR from "@/components/ProjectQR";
 import { ProjectLaunch, Expand, Icon, MockFrame, ProjectDetails, Skeleton, portfolioTitle, projectPreviewHtml, type DetailsTheme } from "./parts";
 
 // Designer-dev portfolio in the style of jonathanzhou.dev: big name, "currently" list,
@@ -128,6 +129,7 @@ function Card({ p }: { p: ProjectSection }) {
         <p className="mt-2 text-neutral-600">{p.tagline}</p>
         {p.award && <p className="mt-2 text-sm font-medium text-indigo-600">🏆 {p.award}</p>}
       </ProjectLaunch>
+      {p.siteUrl && <div data-ui-actions className="mt-3 flex items-center gap-2 p-2"><a href={p.siteUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center rounded-full border border-current px-4 text-sm underline">Open project</a><ProjectQR url={p.siteUrl} title={p.title} /></div>}
       <Expand open={open}>
         <div className="text-neutral-700">
           <ProjectDetails p={p} t={T} open={open} />

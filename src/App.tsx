@@ -6,6 +6,7 @@ import { TEMPLATE_CATALOG } from './templates';
 import { Preview } from './ui/Preview';
 import { TemplateCarousel } from './ui/TemplateCarousel';
 import { createAutomaticGenerationQueue } from './ui/automaticGeneration';
+import { createReadyCue } from './ui/readyCue';
 import { acceptGeneration, addSegment, applyAction, beginBuild, createSession, restoreSavedSession, transcriptText, type BuilderSession } from './integration/session';
 import { detectExecutionMode, generateOnServer } from './integration/api';
 import './ui/styles.css';
@@ -25,6 +26,12 @@ export default function App() {
  const job = useRef<AbortController | null>(null);
  const mode = useRef<ReturnType<typeof detectExecutionMode> | null>(null);
  const queue = useRef<ReturnType<typeof createAutomaticGenerationQueue> | null>(null);
+ const readyCue = useRef<ReturnType<typeof createReadyCue> | null>(null);
+ useEffect(() => {
+  const enabled = !inspection && import.meta.env.VITE_READY_CUE === 'true';
+  const cue = createReadyCue(enabled); readyCue.current = cue;
+  return () => { cue.dispose(); if (readyCue.current === cue) readyCue.current = null; };
+ }, [inspection]);
  const addCaptureSegment = useCallback((segment: TranscriptSegment) => {
   if (segment.sessionId !== sessionRef.current.id) return;
   updateSession(previous => addSegment(previous, segment));
@@ -32,6 +39,7 @@ export default function App() {
  }, [updateSession]);
  const capture = useConfiguredSpeechCapture({ sessionId: session.id, onSegment: addCaptureSegment, onBuild: () => {} });
  const captureRef = useRef(capture); captureRef.current = capture;
+ const startListening = useCallback(() => { void readyCue.current?.unlock(); void captureRef.current.start(); }, []);
  const ending = useRef(false);
  const endListening = useCallback(() => {
   if (ending.current) return;
@@ -67,7 +75,12 @@ export default function App() {
       const checked = validateUiSpec(result.uiSpec);
       safeResult = checked.success ? { ...result, uiSpec: checked.data } : { sessionId: current.id, requestId: pending.requestId, briefVersion: pending.briefVersion, errorCode: 'INVALID_SPEC', safeMessage: checked.error, retryable: true };
      }
-     updateSession(previous => isCurrent() ? acceptGeneration(previous, safeResult) : previous.pending?.requestId === pending.requestId ? { ...previous, pending: null } : previous);
+     updateSession(previous => {
+      if (!isCurrent()) return previous.pending?.requestId === pending.requestId ? { ...previous, pending: null } : previous;
+      const next = acceptGeneration(previous, safeResult);
+      if (next.spec && next.spec !== previous.spec && !next.error) readyCue.current?.play(`${next.id}:${next.spec.basedOnBriefVersion}`);
+      return next;
+     });
     } catch (error) {
      if (controller.signal.aborted && !timedOut) return;
      updateSession(previous => isCurrent() ? acceptGeneration(previous, { sessionId: current.id, requestId: pending.requestId, briefVersion: pending.briefVersion, errorCode: 'BUILD_ERROR', safeMessage: timedOut ? 'Updating took too long. Your previous preview is safe.' : error instanceof Error ? error.message : 'Could not update the preview.', retryable: true }) : previous.pending?.requestId === pending.requestId ? { ...previous, pending: null } : previous);
@@ -79,5 +92,6 @@ export default function App() {
  }, [updateSession]);
  useEffect(() => { try { if (session.spec) sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ id: session.id, briefVersion: session.briefVersion, spec: session.spec, preview: session.preview })); } catch { /* In-memory mode remains available. */ } }, [session]);
  const spec = session.spec;
- return <TemplateCarousel inspection={inspection} templates={TEMPLATE_CATALOG} selectedTemplateId={templateId} onSelectTemplate={setTemplateId} captureStatus={capture.status} starting={capture.starting} onStart={capture.start} onMute={capture.mute} onResume={capture.resume} onEnd={endListening} building={!!session.pending} notice={capture.error || session.error || undefined} preview={spec && session.preview && (!inspection || spec.templateId === templateId) ? <Preview spec={spec} state={session.preview} onAction={(action, componentId) => updateSession(previous => previous.spec && previous.preview ? { ...previous, preview: applyAction(previous.preview, action, previous.spec, componentId) } : previous)} onFieldChange={(componentId, fieldId, value) => updateSession(previous => previous.preview ? { ...previous, preview: { ...previous.preview, forms: { ...previous.preview.forms, [componentId]: { ...previous.preview.forms[componentId], [fieldId]: value } } } } : previous)}/> : undefined}/>;
+ return <TemplateCarousel inspection={inspection} templates={TEMPLATE_CATALOG} selectedTemplateId={templateId} onSelectTemplate={setTemplateId} captureStatus={capture.status} starting={capture.starting} onStart={startListening} onMute={capture.mute} onResume={capture.resume} onEnd={endListening} building={!!session.pending} notice={capture.error || session.error || undefined} preview={spec && session.preview && (!inspection || spec.templateId === templateId) ? <Preview spec={spec} state={session.preview} onAction={(action, componentId) => updateSession(previous => previous.spec && previous.preview ? { ...previous, preview: applyAction(previous.preview, action, previous.spec, componentId) } : previous)} onFieldChange={(componentId, fieldId, value) => updateSession(previous => previous.preview ? { ...previous, preview: { ...previous.preview, forms: { ...previous.preview.forms, [componentId]: { ...previous.preview.forms[componentId], [fieldId]: value } } } } : previous)}/> : undefined}/>;
 }
+

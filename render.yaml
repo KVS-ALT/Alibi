@@ -1,23 +1,26 @@
-# Web service + Postgres. The Workflows service (workflow/) is created separately in the dashboard.
+# One service hosts all generated project URLs; no per-project builds.
 services:
   - type: web
-    name: alibi
+    name: alibi-projects
     runtime: node
-    plan: starter # keep it paid so it never cold-starts during the demo
-    buildCommand: npm ci && npm run build:web
-    startCommand: npm run start:web
+    plan: free
+    region: oregon
+    repo: https://github.com/KVS-ALT/Alibi
+    branch: feature/render-project-apps
+    buildCommand: npm ci --include=dev && npm run build:web
+    startCommand: npm run start:web -- --hostname 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: alibi-db
-          property: connectionString
-      - key: RENDER_API_KEY
-        sync: false
-      - key: WORKFLOW_SLUG
-        value: alibi-workflow
-      - key: ELEVENLABS_API_KEY
-        sync: false
-
-databases:
-  - name: alibi-db
-    plan: basic-256mb
+      - key: NODE_VERSION
+        value: 22.20.0
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_TELEMETRY_DISABLED
+        value: '1'
+      - key: LIVE_PROVIDER_CALLS_ENABLED
+        value: 'false'
+      - key: TEAM_LIVE_TEST_ENABLED
+        value: 'false'
+# Add DATABASE_URL to persist portfolios across restarts. Without it,
+# generated portfolios use the existing single-process memory store.

@@ -15,7 +15,8 @@ const { updateConversationIdentity } = h.load('web/lib/conversation-identity.ts'
 
 let identity = updateConversationIdentity(undefined, { text: "I'm Harsh Anand." });
 const intro = createDraftPortfolio("I'm Harsh Anand.", undefined, { builderName: identity.name });
-const project = createDraftPortfolio('I built a CAD review tool called Modelmate.', intro.portfolio, { builderName: identity.name, projectRegistry: intro.projectRegistry });
+const initialProject = createDraftPortfolio('I built a CAD review tool called Modelmate.', intro.portfolio, { builderName: identity.name, projectRegistry: intro.projectRegistry });
+const project = createDraftPortfolio('Modelmate supports STEP export.', initialProject.portfolio, { builderName: identity.name, projectRegistry: initialProject.projectRegistry });
 identity = updateConversationIdentity(identity, { text: 'Actually, my name is Harsha Anand.' });
 const renamed = createDraftPortfolio('Actually, the CAD review tool is now called Draftcheck.', project.portfolio, { builderName: identity.name, projectRegistry: project.projectRegistry });
 const projectId = Object.keys(project.portfolio.projects)[0];
@@ -73,6 +74,7 @@ assert.deepEqual(Object.keys(renamed.portfolio.projects), [projectId]);
       await inspect('project', 'Harsh Anand', 'Modelmate');
       await page.locator('main article button[aria-expanded]').click();
       await page.getByText('how it works', { exact: true }).waitFor();
+      await page.getByText('Modelmate supports STEP export', { exact: true }).waitFor();
       await page.frameLocator('iframe').getByRole('heading', { name: 'Modelmate', exact: true }).waitFor();
       await inspect('expanded', 'Harsh Anand', 'Modelmate');
       current = renamed; version++;

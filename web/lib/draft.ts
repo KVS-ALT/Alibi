@@ -1,5 +1,5 @@
 import { Claims, Portfolio, type ProjectSection } from '@alibi/shared';
-import { resolveProjectIdentity, seedProjectRegistry, spokenProjectName, type ProjectIdentityRegistry } from './project-identity';
+import { isProjectFeatureStatement, mergeProjectHighlights, resolveProjectIdentity, seedProjectRegistry, spokenProjectName, type ProjectIdentityRegistry } from './project-identity';
 
 interface Recipe {
  key: string; match: RegExp; name: string; category: string; tagline: string; summary: string;
@@ -56,7 +56,7 @@ export function createDraftPortfolio(transcript: string, previous?: Portfolio,op
  const statements=clauses.join(' ');
  const selections:{recipe:Recipe;clause:string}[]=[];
  for(const clause of clauses){
-  if(!/\b(?:built|building|working|making|created|develop(?:ed|ing|s|ment)?|design(?:ed|ing|s)?|projects?|websites?|apps?|applications?|tools?|platforms?|marketplaces?|problems?|helps?|needs?|wish|waste|struggl(?:e|ing)|automate|actually|called)\b/i.test(clause))continue;
+  if(!isProjectFeatureStatement(clause)&&!/\b(?:built|building|working|making|created|develop(?:ed|ing|s|ment)?|design(?:ed|ing|s)?|projects?|websites?|apps?|applications?|tools?|platforms?|marketplaces?|problems?|helps?|needs?|wish|waste|struggl(?:e|ing)|automate|actually|called)\b/i.test(clause))continue;
   let found=recipes.filter(recipe=>recipe.match.test(clause));
   // Inventory/payment APIs can be features of a product rather than separate products.
   if(found.some(recipe=>recipe.key==='cars'))found=found.filter(recipe=>recipe.key!=='commerce'&&recipe.key!=='developer');
@@ -86,6 +86,7 @@ export function createDraftPortfolio(transcript: string, previous?: Portfolio,op
    const project: ProjectSection = {status:'ready',title:name,category:recipe.category,year:new Date().getUTCFullYear(),tagline:recipe.tagline,summary:recipe.summary,highlights:[...recipe.highlights],metrics:recipe.metrics.map(([label,value])=>({label,value})),stack:[...recipe.stack]};
    project.mockHtml=renderProjectMock(project);portfolio.projects[identity.id]=project;
  }
+ for(const identity of projectRegistry.projects){const project=portfolio.projects[identity.id];if(project&&identity.spokenFeatures?.length){project.highlights=mergeProjectHighlights(project.highlights,identity.spokenFeatures);project.mockHtml=renderProjectMock(project);}}
  const projects=Object.entries(portfolio.projects);
  const spokenName=options.builderName||statements.match(/\bmy name is\s+([a-zA-Z][a-zA-Z'-]*)/i)?.[1];
  if(projects.length||spokenName){

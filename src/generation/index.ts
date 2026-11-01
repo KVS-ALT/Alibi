@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Brief, GenerationRequest, GenerationResult, UiSpec } from '../contracts';
 import { TEMPLATE_CATALOG } from '../templates';
+import { getTemplateScenario } from './scenarios';
 
 export const GENERATOR_MODE = 'Demo generator';
 const text = z.string().max(12000).refine(v => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v), 'Unsupported control character');
@@ -73,9 +74,29 @@ export async function generatePrototype(request:GenerationRequest, options:{temp
  if(request.previousUiSpec && (request.previousUiSpec.sessionId!==request.sessionId || request.previousUiSpec.basedOnBriefVersion>request.briefVersion || !validateUiSpec(request.previousUiSpec).success))throw new Error('Previous prototype does not belong to this session or brief history');
  const title=titleFrom(input,template.name);
  const requirement=request.brief.requirements.slice(1,4);
- const spec:UiSpec={sessionId:request.sessionId,version:(request.previousUiSpec?.version??0)+1,basedOnBriefVersion:request.briefVersion,templateId,templateVersion:1,demoDataLabel:'Synthetic demo data • local interactions only',demoData:{listings:[{name:`${title} · Featured`,category:'Featured',status:'Available'},{name:`${title} · Community`,category:'Community',status:'Available'},{name:`${title} · Upcoming`,category:'Featured',status:'Coming soon'}]},screens:[
- {id:'home',title,components:[{id:'site-navigation',type:'navigation',properties:{items:[{label:'Discover',screenId:'home'},{label:'Get in touch',screenId:'contact'}]},actions:[]},{id:'hero-brand',type:'text',properties:{text:title},actions:[]},{id:'hero-title',type:'text',properties:{text:title},actions:[]},{id:'hero-description',type:'text',properties:{text:requirement.join(' ')||request.brief.purpose},actions:[]},{id:'audience',type:'card',properties:{title:`Made for ${request.brief.audience}`,body:requirement[0]??`Explore ${title} and try the interactive demo.`},actions:[]},...requirement.slice(1).map((body,i)=>({id:`feature-${i}`,type:'card' as const,properties:{title:`What you can do · ${i+1}`,body},actions:[]})),{id:'category-filter',type:'form',properties:{fields:[{id:'category',label:'Filter demo items',type:'select',required:false,options:['All','Featured','Community']}],submitLabel:'Apply filter'},actions:[{type:'filter',dataKey:'listings',field:'category',stateKey:'category'}]},{id:'results',type:'table',properties:{columns:['name','category','status'],dataKey:'listings'},actions:[]},{id:'contact-button',type:'button',properties:{label:'Get in touch'},actions:[{type:'navigate',screenId:'contact'}]}]},
- {id:'contact',title:`Connect with ${title}`,components:[{id:'back',type:'button',properties:{label:'Back to discover'},actions:[{type:'navigate',screenId:'home'}]},{id:'contact-form',type:'form',properties:{fields:[{id:'visitor-name',label:'Your name',type:'text',required:true},{id:'visitor-email',label:'Email',type:'email',required:true},{id:'visitor-message',label:'What would you like to know?',type:'text',required:false}],submitLabel:'Send demo request'},actions:[{type:'submitDemoForm',formId:'contact-form',resultStateKey:'contact-result'}]},{id:'demo-notice',type:'text',properties:{text:'This is a local demo. Nothing is sent or stored on a server.'},actions:[]}]}]};
+ const scenario=getTemplateScenario(templateId,input);
+ const spec:UiSpec={
+   sessionId:request.sessionId,version:(request.previousUiSpec?.version??0)+1,basedOnBriefVersion:request.briefVersion,
+   templateId,templateVersion:1,demoDataLabel:'Synthetic demo data - local interactions only',demoData:{listings:scenario.data},
+   screens:[
+     {id:'home',title:scenario.sectionTitle,components:[
+       {id:'site-navigation',type:'navigation',properties:{items:[{label:'Explore',screenId:'home'},{label:scenario.actionLabel,screenId:'contact'}]},actions:[]},
+       {id:'hero-brand',type:'text',properties:{text:title},actions:[]},
+       {id:'hero-title',type:'text',properties:{text:title},actions:[]},
+       {id:'hero-description',type:'text',properties:{text:requirement.join(' ')||scenario.description},actions:[]},
+       {id:'audience',type:'card',properties:{title:scenario.actionLabel,body:scenario.description},actions:[{type:'navigate',screenId:'contact'}]},
+       ...requirement.slice(1).map((body,i)=>({id:`feature-${i}`,type:'card' as const,properties:{title:`Your requirement ${i+1}`,body},actions:[]})),
+       {id:'category-filter',type:'form',properties:{fields:[{id:'category',label:'Filter by category',type:'select',required:false,options:['All',...new Set(scenario.data.map(row=>String(row.category)))]}],submitLabel:'Apply filter'},actions:[{type:'filter',dataKey:'listings',field:'category',stateKey:'category'}]},
+       {id:'results',type:'table',properties:{columns:scenario.columns,dataKey:'listings'},actions:[]},
+       {id:'contact-button',type:'button',properties:{label:scenario.actionLabel},actions:[{type:'navigate',screenId:'contact'}]},
+     ]},
+     {id:'contact',title:scenario.actionLabel,components:[
+       {id:'back',type:'button',properties:{label:'Back to explore'},actions:[{type:'navigate',screenId:'home'}]},
+       {id:'contact-form',type:'form',properties:{fields:scenario.fields,submitLabel:scenario.submitLabel},actions:[{type:'submitDemoForm',formId:'contact-form',resultStateKey:'contact-result'}]},
+       {id:'demo-notice',type:'text',properties:{text:scenario.description+' This is a local demo. Nothing is sent or stored on a server.'},actions:[]},
+     ]},
+   ],
+ };
  const checked=validateUiSpec(spec);if(!checked.success)throw new Error(checked.error);
  return {...envelope,uiSpec:checked.data};
  }catch(error){return {...envelope,errorCode:'INVALID_GENERATION',safeMessage:error instanceof Error?error.message:'Could not generate this prototype.',retryable:true};}

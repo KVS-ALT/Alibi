@@ -61,6 +61,51 @@ describe('demo generation', () => {
     controller.abort();
     await expect(generatePrototype(request(), { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
   });
+
+  it('gives every template its own useful dataset, action and form', async () => {
+    const signatures = new Set<string>();
+    for (const template of TEMPLATE_CATALOG) {
+      const result = await generatePrototype(request(), { templateId: template.id });
+      if (!('uiSpec' in result)) throw new Error(result.safeMessage);
+      const spec = result.uiSpec;
+      const table = spec.screens[0].components.find(c => c.type === 'table')!;
+      const form = spec.screens[1].components.find(c => c.type === 'form')!;
+      expect(table.type).toBe('table');
+      expect(form.type).toBe('form');
+      if (table.type === 'table' && form.type === 'form') {
+        signatures.add(JSON.stringify([table.properties.columns, form.properties.fields.map(f => [f.id, f.label, f.type]), form.properties.submitLabel]));
+        expect(spec.demoData.listings.length).toBeGreaterThan(1);
+      }
+    }
+    expect(signatures.size).toBe(20);
+  });
+
+  it('creates booking, preorder and RSVP controls for the relevant use cases', async () => {
+    const cases = [
+      ['studio-booking', 'booking-date', 'date'],
+      ['restaurant', 'reservation-guests', 'number'],
+      ['marketplace', 'bag-quantity', 'number'],
+      ['bakery', 'pickup-date', 'date'],
+      ['wedding', 'rsvp-attendance', 'select'],
+    ];
+    for (const [templateId, fieldId, type] of cases) {
+      const result = await generatePrototype(request(), { templateId });
+      if (!('uiSpec' in result)) throw new Error(result.safeMessage);
+      const form = result.uiSpec.screens[1].components.find(c => c.type === 'form')!;
+      if (form.type === 'form') expect(form.properties.fields.find(f => f.id === fieldId)).toMatchObject({ type, required: true });
+    }
+  });
+
+  it('honors a waitlist brief with a local email opt-in instead of a booking form', async () => {
+    const result = await generatePrototype(request('Create a warm landing page called Little Planet. Add an email waitlist for launch updates.'), { templateId: 'studio-booking' });
+    if (!('uiSpec' in result)) throw new Error(result.safeMessage);
+    const form = result.uiSpec.screens[1].components.find(c => c.type === 'form')!;
+    if (form.type === 'form') {
+      expect(form.properties.submitLabel).toMatch(/waitlist/i);
+      expect(form.properties.fields.some(f => f.type === 'email' && f.required)).toBe(true);
+      expect(form.properties.fields.some(f => f.type === 'date')).toBe(false);
+    }
+  });
 });
 
 describe('schema boundary', () => {

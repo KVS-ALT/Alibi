@@ -38,32 +38,35 @@ describe('the exported project', () => {
   });
 
   it('runs search, category filtering, page navigation, browser validation and local receipts', async () => {
-    const dom = open(await fixture()), d = dom.window.document;
+    const spec = await fixture(), dom = open(spec), d = dom.window.document;
+    const table = spec.screens[0].components.find(c => c.type === 'table')!;
+    if (table.type !== 'table') throw new Error('Missing table');
+    const category = String(spec.demoData.listings[0].category);
+    const filtered = spec.demoData.listings.filter(row => row.category === category);
     expect(d.querySelectorAll('tbody tr')).toHaveLength(3);
     const select = d.querySelector('select')!;
     expect(select.value).toBe('');
-    select.value = 'Featured';
+    select.value = category;
     select.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
     d.querySelector('form')!.dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
-    expect(d.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(d.querySelectorAll('tbody tr')).toHaveLength(filtered.length);
     const search = d.querySelector('input[aria-label="Search demo items"]') as HTMLInputElement;
-    search.value = 'Upcoming';
+    search.value = String(filtered[filtered.length - 1][table.properties.columns[0]]);
     search.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
     expect(d.querySelectorAll('tbody tr')).toHaveLength(1);
-    (Array.from(d.querySelectorAll('nav button')).find(b => b.textContent === 'Get in touch') as HTMLButtonElement).click();
-    expect(d.querySelector('.section-heading h2')?.textContent).toBe('Connect with Sunday Bread');
+    (Array.from(d.querySelectorAll('nav button')).find(b => b.textContent === spec.screens[1].title) as HTMLButtonElement).click();
+    expect(d.querySelector('.section-heading h2')?.textContent).toBe(spec.screens[1].title);
     const form = d.querySelector('form')!;
     form.dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
     expect(d.querySelector('.form-success')).toBeNull();
-    for (const [name, value] of [['visitor-name', 'Test Visitor'], ['visitor-email', 'visitor@example.test']]) {
-      const input = form.querySelector('[name="' + name + '"]') as HTMLInputElement;
-      input.value = value;
+    for (const input of Array.from(form.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input,select'))) {
+      input.value = input.tagName === 'SELECT' ? (input as HTMLSelectElement).options[1].value : input.type === 'email' ? 'visitor@example.test' : input.type === 'date' ? '2026-12-01' : input.type === 'number' ? '2' : 'Test Visitor';
       input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
     }
     form.dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
     expect(d.querySelector('.form-success')?.textContent).toMatch(/locally.*nothing was sent/i);
     (d.querySelector('.template-brand') as HTMLButtonElement).click();
-    expect(d.querySelector('select')?.value).toBe('Featured');
+    expect(d.querySelector('select')?.value).toBe(category);
     expect(d.querySelectorAll('tbody tr')).toHaveLength(1);
     dom.window.close();
   });
@@ -73,7 +76,8 @@ describe('the exported project', () => {
     const hostile = '</script></template><img src=x onerror="window.pwned=1"><script>window.pwned=2</script>';
     const component = spec.screens[0].components.find(c => c.id === 'hero-title')!;
     if (component.type === 'text') component.properties.text = hostile;
-    spec.demoData.listings[0].name = hostile;
+    const table = spec.screens[0].components.find(c => c.type === 'table')!;
+    if (table.type === 'table') spec.demoData.listings[0][table.properties.columns[0]] = hostile;
     const dom = open(spec), d = dom.window.document;
     expect((dom.window as unknown as { pwned?: number }).pwned).toBeUndefined();
     expect(d.querySelector('h1')?.textContent).toBe(hostile);

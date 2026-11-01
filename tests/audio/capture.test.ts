@@ -10,6 +10,7 @@ class BrowserRecognition implements RecognitionLike {
   onerror: RecognitionLike['onerror'] = null;
   onresult: RecognitionLike['onresult'] = null;
   start = vi.fn();
+  stop = vi.fn();
   abort = vi.fn();
   result(text: string, isFinal = true) {
     this.onresult?.({ resultIndex: 0, results: [{ 0: { transcript: text }, isFinal }] });
@@ -108,5 +109,14 @@ describe('consented browser capture lifecycle', () => {
     instances[1].onend?.(); capture.mute(); vi.runOnlyPendingTimers();
     expect(instances).toHaveLength(2);
     capture.dispose(); vi.useRealTimers();
+  });
+  it('flushes with a real browser stop/final/end sequence and never fabricates a final interim', async () => {
+    const { capture, instances, onSegment } = setup(); capture.start(); instances[0].onstart?.();
+    instances[0].result('unfinished', false);
+    const pending = capture.flush(); expect(instances[0].stop).toHaveBeenCalledTimes(1);
+    expect(onSegment.mock.calls.filter(call => call[0].isFinal)).toHaveLength(0);
+    instances[0].result('finished requirement', true); instances[0].onend?.(); await pending;
+    expect(onSegment.mock.calls.filter(call => call[0].isFinal)).toHaveLength(1);
+    capture.end();
   });
 });

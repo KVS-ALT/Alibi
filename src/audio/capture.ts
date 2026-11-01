@@ -18,6 +18,7 @@ export interface RecognitionLike {
   onerror: ((event: { error: string }) => void) | null;
   onresult: ((event: RecognitionEvent) => void) | null;
   start(): void;
+  stop?(): void;
   abort(): void;
 }
 export type RecognitionFactory = () => RecognitionLike;
@@ -63,6 +64,9 @@ export function createSpeechCapture(options: SpeechCaptureOptions) {
   let recognition: RecognitionLike | undefined;
   let restart: ReturnType<typeof setTimeout> | undefined;
   let nextSegment = 0;
+  let flushPromise: Promise<void> | undefined;
+  let flushResolve: (() => void) | undefined;
+  let flushDeadline: ReturnType<typeof setTimeout> | undefined;
   const buildPhrase = normalizeCommand(options.buildPhrase ?? 'build prototype');
   const pausePhrase = normalizeCommand(options.pausePhrase ?? 'pause listening');
 
@@ -71,6 +75,7 @@ export function createSpeechCapture(options: SpeechCaptureOptions) {
     listeners.forEach(listener => listener());
   }
   function release() {
+    completeFlush();
     if (restart !== undefined) clearTimeout(restart);
     restart = undefined;
     const previous = recognition;
@@ -145,6 +150,7 @@ export function createSpeechCapture(options: SpeechCaptureOptions) {
     };
     current.onend = () => {
       if (!valid()) return;
+      completeFlush();
       recognition = undefined;
       current.onstart = current.onend = current.onerror = current.onresult = null;
       update({ status: 'muted', starting: true, interimText: '' });
@@ -159,6 +165,20 @@ export function createSpeechCapture(options: SpeechCaptureOptions) {
     consented = true;
     wantsAudio = true;
     open();
+  }
+  function completeFlush() {
+    if (flushDeadline !== undefined) clearTimeout(flushDeadline);
+    flushDeadline = undefined; const resolve = flushResolve;
+    flushResolve = undefined; flushPromise = undefined; resolve?.();
+  }
+  function flush(): Promise<void> {
+    if (flushPromise) return flushPromise;
+    if (!recognition?.stop || !wantsAudio || disposed) return Promise.resolve();
+    flushPromise = new Promise<void>(resolve => { flushResolve = resolve; });
+    const pending = flushPromise;
+    flushDeadline = setTimeout(() => { fail('Speech recognition did not finish in time. Try starting again.'); }, 4000);
+    try { recognition.stop(); } catch { fail('Speech recognition could not finish. Try starting again.'); }
+    return pending;
   }
   function resume() {
     if (!consented || disposed || snapshot.status === 'ended' || wantsAudio) return;
@@ -178,7 +198,7 @@ export function createSpeechCapture(options: SpeechCaptureOptions) {
     listeners.clear();
   }
   return {
-    start, resume, mute, end, dispose,
+    start, resume, mute, end, dispose, flush,
     getSnapshot: () => snapshot,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
   };

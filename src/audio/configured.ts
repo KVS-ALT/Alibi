@@ -85,7 +85,7 @@ export function useConfiguredSpeechCapture(options: ConfiguredSpeechOptions) {
       start: () => begin(false), resume: () => begin(true),
       mute: () => { operation.current++; setLocallyMuted(true); if (selectedProvider.current) controls.current[selectedProvider.current].mute(); },
       end: () => { operation.current++; ended.current = true; metadataAbort.current?.abort(); Object.values(controls.current).forEach(capture => capture.end()); setLocallyMuted(false); },
-      flush: async () => { const provider = selectedProvider.current; if (!ended.current && provider && provider !== 'browser') await controls.current[provider].flush(); },
+      flush: async () => { const provider = selectedProvider.current; if (!ended.current && provider) await controls.current[provider].flush(); },
     };
   }, []);
   const selected = metadata ? controls.current[metadata.provider] : browser;

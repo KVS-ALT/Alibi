@@ -37,6 +37,7 @@ export function useSpeechCapture(options: SpeechCaptureOptions) {
     resume: () => controller.current?.resume(),
     mute: () => controller.current?.mute(),
     end: () => controller.current?.end(),
+    flush: async () => { await controller.current?.flush(); },
   }), []);
   return { ...snapshot, ...actions };
 }

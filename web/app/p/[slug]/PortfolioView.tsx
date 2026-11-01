@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import type { Portfolio } from "@alibi/shared";
-import Minimal from "@/templates/minimal";
+import { TEMPLATES } from "@/templates";
 
 const POLL_MS = 1500;
+const EMPTY: Portfolio = { templateId: "showcase", skills: [], projects: {}, contradictions: [] };
 
 export default function PortfolioView({ slug }: { slug: string }) {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
@@ -38,6 +39,7 @@ export default function PortfolioView({ slug }: { slug: string }) {
 
   if (missing) return <p className="p-8 text-neutral-500">Portfolio not found.</p>;
 
-  // Only "minimal" exists so far; terminal/bold land in build step 5.
-  return <Minimal portfolio={portfolio ?? { templateId: "minimal", projects: {}, contradictions: [] }} />;
+  const p = portfolio ?? EMPTY;
+  const Template = TEMPLATES[p.templateId] ?? TEMPLATES.showcase;
+  return <Template portfolio={p} />;
 }

@@ -4,8 +4,8 @@ import Link from "next/link";
 export default function Home() {
   return (
     <main className="flex min-h-screen items-center justify-center p-8">
-      <Link href="/p/demo-backup" className="underline">
-        View demo portfolio
+      <Link href="/preview" className="underline">
+        Template preview
       </Link>
     </main>
   );

@@ -5,14 +5,14 @@ import { createSpeechmaticsProxy, type ProxySocket } from './proxy';
 
 declare global { var __alibiOwnedSpeechProxy: ReturnType<typeof createSpeechmaticsProxy> | undefined; }
 
-/** One process-owned budget and upstream connection, shared by all Next route handlers. */
+/** One process-owned proxy shared by all Next route handlers. Limits come from getLiveRuntime(). */
 export function getSpeechProxy() {
   if (!globalThis.__alibiOwnedSpeechProxy) {
     const runtime = getLiveRuntime();
-    const tokenProvider = createSpeechmaticsTokenProvider({ enabled: runtime.liveEnabled, liveCallsAllowed: runtime.liveEnabled, apiKey: runtime.speechKey }, { fetcher: runtime.speechFetch });
-    globalThis.__alibiOwnedSpeechProxy = createSpeechmaticsProxy({ enabled: runtime.liveEnabled, liveCallsAllowed: runtime.liveEnabled, ...runtime.limits, maxStartsPerSession: 1 }, {
+    const tokenProvider = createSpeechmaticsTokenProvider({ enabled: runtime.speechEnabled, liveCallsAllowed: runtime.speechEnabled, apiKey: runtime.speechKey }, { fetcher: runtime.speechEnabled ? fetch : undefined });
+    globalThis.__alibiOwnedSpeechProxy = createSpeechmaticsProxy({ enabled: runtime.speechEnabled, liveCallsAllowed: runtime.speechEnabled, ...runtime.limits, maxStartsPerSession: 20 }, {
       tokenProvider,
-      createSocket: runtime.liveEnabled ? url => new WebSocket(url) as unknown as ProxySocket : undefined,
+      createSocket: runtime.speechEnabled ? url => new WebSocket(url) as unknown as ProxySocket : undefined,
       onSegment: segment => ingestTranscript(segment.sessionId, { id: segment.segmentId, text: segment.text, isFinal: segment.isFinal }),
     });
   }

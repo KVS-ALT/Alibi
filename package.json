@@ -14,7 +14,9 @@
     "lint:ui": "lintapple http://127.0.0.1:3005 --ready \"section[aria-label='Microphone controls']\""
   },
   "dependencies": {
-    "pg": "^8.13.0"
+    "@renderinc/sdk": "^1.6.0",
+    "pg": "^8.13.0",
+    "tsx": "^4.23.15"
   },
   "devDependencies": {
     "lintapple": "^0.1.24"

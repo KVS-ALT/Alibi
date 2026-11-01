@@ -3,7 +3,8 @@ import { withProjectSites } from './project-hosting';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Claims, Portfolio, type Claims as ClaimsData, type Portfolio as PortfolioData } from '@alibi/shared';
 import { db, hasDb } from './db';
-import { DEFAULT_GENERATION_MODEL, generatePortfolio } from './generation';
+import { generateViaWorkflow } from './workflow-generation';
+import { DEFAULT_GENERATION_MODEL } from './generation';
 import { applyConversationFacts } from './portfolio-facts';
 import { createDraftPortfolio, renderProjectMock } from './draft';
 import { updateConversationIdentity, type ConversationIdentity } from './conversation-identity';
@@ -139,8 +140,8 @@ export function ingestTranscript(id:string,segment:{id:string;text:string;isFina
 async function build(session:LiveSession){
  if(session.deleted||session.building||session.revision<=session.acceptedRevision||!grantAllows(session))return;
  if(!continuousCapture()&&state.generationAttempts>=limit('APPROVED_GENERATION_REQUESTS',3)){session.error='The approved inference allowance has been reached. Your last completed portfolio is preserved.';session.status='error';return;}
- session.firstDirtyAt=undefined;const revision=session.revision,transcript=conversation(session),key=process.env.FEATHERLESS_API_KEY;
- if(!key){session.error='Featherless credentials are not configured.';session.status='error';return;}
+ session.firstDirtyAt=undefined;const revision=session.revision,transcript=conversation(session),key=process.env.RENDER_API_KEY;
+ if(!key){session.error='Render Workflow credentials are not configured.';session.status='error';return;}
  session.building=true;session.status='building';session.error=undefined;session.abort=new AbortController();
  const publish=async(incoming:{portfolio:PortfolioData;claims:ClaimsData})=>{
   if(session.deleted)return;
@@ -152,11 +153,8 @@ async function build(session:LiveSession){
   try{await save(session);}catch(error){if(!session.deleted)Object.assign(session,prior);throw error;}
  };
  try {
-  const result=await generatePortfolio({transcript,previous:session.version?session.portfolio:undefined,signal:session.abort.signal,identity:structuredClone(session.identity),projectRegistry:structuredClone(session.projectRegistry)},{apiKey:key,model:process.env.FEATHERLESS_MODEL||DEFAULT_GENERATION_MODEL,onDraft:publish,onDiagnostic:event=>console.info('[alibi:generation]',JSON.stringify({revision,...event})),fetcher:async(input,init)=>{
-   const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);
-   if(url.href!=='https://api.featherless.ai/v1/chat/completions'||!grantAllows(session)||!continuousCapture()&&state.generationAttempts>=limit('APPROVED_GENERATION_REQUESTS',3))throw new Error('Approved inference allowance reached.');
-   state.generationAttempts++;return fetch(input,{...init,redirect:'error'});
-  }});
+  state.generationAttempts++;
+  const result=await generateViaWorkflow({transcript,previous:session.version?session.portfolio:undefined,signal:session.abort.signal,identity:structuredClone(session.identity),projectRegistry:structuredClone(session.projectRegistry)});
   // One build runs per session. Publish this completed snapshot, then catch up
   // with queued words; continuous speech must not discard every completed build.
   if(session.deleted)return;
@@ -178,3 +176,5 @@ export function claimInteractiveTest(token:string){
  return `${TEST_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/api${unlimitedUsage()?'':'; Max-Age=900'}${process.env.NODE_ENV==='production'&&process.env.ALIBI_LOCAL_PROFILE!=='true'?'; Secure':''}`;
 }
 export function routeError(error:unknown){return Response.json({error:{code:error instanceof LiveHttpError?error.code:'UNAVAILABLE',message:error instanceof LiveHttpError?error.message:'The request could not be completed.'}},{status:error instanceof LiveHttpError?error.status:503,headers:{'Cache-Control':'no-store'}});}
+
+

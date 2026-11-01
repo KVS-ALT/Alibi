@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Portfolio as PortfolioSchema, type Portfolio } from "@alibi/shared";
+import ProjectQR from "@/components/ProjectQR";
 import { TEMPLATES } from "@/templates";
 
 const POLL_MS = 1500;
@@ -53,5 +54,5 @@ export default function PortfolioView({ slug }: { slug: string }) {
 
   const p = portfolio ?? EMPTY;
   const Template = TEMPLATES[p.templateId] ?? TEMPLATES.showcase;
-  return <><Template portfolio={p} /><nav aria-label="Project apps" className="mx-auto flex max-w-4xl flex-wrap gap-4 p-6">{Object.entries(p.projects).filter(([, project]) => project.status === 'ready').map(([id, project]) => <a className="inline-flex min-h-11 items-center rounded-lg border border-neutral-300 bg-white px-4 py-3 text-sm text-neutral-900 underline underline-offset-4" key={id} href={project.siteUrl} target="_blank" rel="noopener noreferrer" aria-disabled={!project.siteUrl}>{project.siteUrl ? 'Open ' : 'Deploying '}{project.title}</a>)}</nav></>;
+  return <><Template portfolio={p} /><nav aria-label="Project apps" className="mx-auto flex max-w-4xl flex-wrap gap-4 p-6">{Object.entries(p.projects).filter(([, project]) => project.status === 'ready').map(([id, project]) => <div key={id} className="flex items-center gap-2"><a className="inline-flex min-h-11 items-center rounded-lg border border-neutral-300 bg-white px-4 py-3 text-sm text-neutral-900 underline underline-offset-4" key={id} href={project.siteUrl} target="_blank" rel="noopener noreferrer" aria-disabled={!project.siteUrl}>{project.siteUrl ? 'Open ' : 'Deploying '}{project.title}</a><ProjectQR url={project.siteUrl} title={project.title} /></div>)}</nav></>;
 }

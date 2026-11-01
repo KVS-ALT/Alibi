@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Portfolio, ProjectSection } from "@alibi/shared";
+import ProjectQR from "@/components/ProjectQR";
 import { ProjectLaunch, Expand, Icon, MockFrame, ProjectDetails, Skeleton, initials, portfolioTitle, projectPreviewHtml, type DetailsTheme } from "./parts";
 
 // Personal, all-lowercase portfolio in the style of affa.nz: live activity card, text-first project
@@ -140,6 +141,7 @@ function Card({ p }: { p: ProjectSection }) {
         <div className="mt-0.5 text-sm text-orange-800">{p.award ?? p.category}</div>
         <p className="mt-2 text-sm text-stone-500">{p.tagline}</p>
       </ProjectLaunch>
+      {p.siteUrl && <div data-ui-actions className="mt-3 flex items-center gap-2 p-2"><a href={p.siteUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center rounded-full border border-current px-4 text-sm underline">Open project</a><ProjectQR url={p.siteUrl} title={p.title} /></div>}
       <Expand open={open}>
         <div className="text-sm text-stone-700">
           <ProjectDetails

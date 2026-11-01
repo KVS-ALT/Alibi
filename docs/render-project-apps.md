@@ -1,56 +1,11 @@
-# Render project apps
+# Standalone Render project sites
 
-This branch includes the teammate's `design/mock-kits-and-guide` at 2c55d44.
-Each ready generated project has a public `/p/<slug>/project/<id>` URL with
-its own title, generated content, template theme and a matching product UI kit.
-All URLs run on one Render Next.js service, without per-project redeploys.
+Generated ready projects are deployed as separate free Render Node web services, each with its own onrender.com domain. Cards and project links open the service root in a new tab. Standalone sites contain no portfolio back link.
 
-The workspace supports search, adding items, completion and browser-local
-persistence. Product preview uses the teammate's six reviewed mock kits.
-These are interactive prototypes; project-specific external integrations
-and backend business logic are not synthesized. No generated code executes.
+The main service requires RENDER_API_KEY; Render supplies RENDER_SERVICE_ID, RENDER_EXTERNAL_URL and RENDER_GIT_BRANCH. The server resolves its own workspace and repository, uses a stable slug/project hash to recover existing services after restart, and creates one service per project. Credentials stay on the main service and are never copied to project services. Deployment errors retry after 60 seconds and are recorded without credentials.
 
-Deploy the root render.yaml Blueprint or create a Node web service using:
-- Branch: feature/render-project-apps
-- Build: npm ci --include=dev && npm run build:web
-- Start: npm run start -w web -- --hostname 0.0.0.0 --port $PORT
-- Health: /api/health
-- Node: 22.20.0
+Each child runs scripts/standalone-project.cjs, with PROJECT_ID, PROJECT_SOURCE_URL and a PROJECT_SNAPSHOT. It uses the generated preview and bundled kit CSS, includes browser-local workspace interactions, and refreshes content from the parent every 15 seconds. The deployment snapshot lets a child continue displaying its project after the parent's in-memory portfolio disappears. The project is still a prototype; external business integrations are not synthesized.
 
-The free plan may cold start. The default has no paid provider calls.
-Configure server-side provider credentials and the existing private grant
-profile separately to enable voice/AI. Never set ALIBI_LOCAL_PROFILE on Render.
-Set DATABASE_URL and initialize the existing schema for durable portfolios;
-otherwise generated links disappear on process restart. Browser-local workspace
-items are not shared across devices. /p/demo-backup is the explicit fixture.
+Main-service commit 412da11 includes the speech PCM batch compatibility fix inherited from the integrated pipeline. The private demo cookie is still required to start speech. Unlimited mode removes recording-duration limits; it does not remove provider, connection or authentication failures.
 
-For hosted private demos, `ALIBI_UNLIMITED_USAGE=true` removes the app's inference
-count, speech/audio, 90-second grant and fixed expiry limits. The private demo
-token and `INTERACTIVE_TEST_TOKEN_SHA256` are still required before starting;
-the newly claimed HttpOnly cookie lasts for the browser session rather than
-15 minutes. Existing provider enable flags and server-side credentials remain
-required. External provider quotas, rate limits and charges still apply.
-Each ready project is linked from both the capture home and public portfolio,
-using its actual session slug at `/p/<slug>/project/<id>` on the Render host.
-
-Validation at this branch's implementation snapshot:
-- `npm test`: all 92 offline regression tests pass.
-- `npm run build:web`: production compilation, type checking and page generation pass.
-- `node scripts/qa-project-apps.cjs http://127.0.0.1:3014`: eight rendered states pass lintapple with
-  zero findings at 390×844 and 1440×900: workspace, empty search, product preview
-  and About. The script checks adding/completing an item, persistence after
-  reload, search, no page errors, no horizontal overflow and an unknown-project 404.
-- The final compiled stylesheet contains all 140 finite accent/status utilities
-  assembled by the reviewed mock kits, with zero missing selectors. This covers
-  the color safelist; it does not establish visual quality across every kit.
-
-The QA script accepts an optional base URL, defaulting to `http://127.0.0.1:3012`.
-
-Browser coverage uses the `demo-backup` shipit fixture and its template. It does
-not establish all-theme or all-kit coverage, live AI/microphone behavior, Render
-deployment, durable database behavior or project-specific external integrations.
-The Product preview is a static sandboxed product screen; the separate Workspace
-tab provides the working browser-local search, add and completion controls.
-The build retains the teammate kit's unused `Accent` type lint warning.
-The QA report is written before any visual findings fail the command, so failures
-remain reviewable in `ui-qa/project-apps.json`.
+Production build, TypeScript and lint checks passed. User requested that microphone and rendered interaction testing be left to them, so no new lintapple or browser interaction pass is claimed.

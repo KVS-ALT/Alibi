@@ -4,6 +4,7 @@ import { readFile,realpath,stat } from 'node:fs/promises';
 import { resolve,sep,extname } from 'node:path';
 import { createProjectArchive } from '../src/export';
 import { localRunner,parseJobInput,sessionIdSchema,type JobRunner,type PackageResult,type Progress } from './pipeline';
+import { createEmailHandoff } from './email';
 
 class HttpError extends Error {constructor(public status:number,public code:string,message:string){super(message);}}
 type JobEvent={type:'stage';progress:Progress}|{type:'result';result:PackageResult['result']}|{type:'error';code:string;message:string};
@@ -26,6 +27,8 @@ const mime:Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text
 export function createApp(options:ServerOptions={}){
  const runner=options.runner??localRunner,now=options.now??Date.now,ttl=options.ttlMs??30*60*1000;
  const sessions=new Map<string,Session>(),rates=new Map<string,{start:number;count:number}>();let activeJobs=0;
+ // Intentionally disabled: no credentials, global fetch, or sending transport are wired.
+ const email=createEmailHandoff();
  const publish=(job:Job,event:JobEvent)=>{job.events.push(event);const payload=`data: ${JSON.stringify(event)}\n\n`;for(const listener of job.listeners){if(listener.writableLength>256*1024){listener.destroy();job.listeners.delete(listener);}else listener.write(payload);}};
  const finish=(job:Job)=>{job.done=true;for(const listener of job.listeners)listener.end();job.listeners.clear();};
  const cleanup=()=>{for(const[id,session]of sessions)if(session.expiresAt<=now()){for(const job of session.jobs.values()){job.abort.abort();finish(job);}sessions.delete(id);}for(const[key,value]of rates)if(now()-value.start>60000)rates.delete(key);};
@@ -79,6 +82,15 @@ export function createApp(options:ServerOptions={}){
      res.writeHead(200,{'Content-Type':'text/event-stream','Connection':'keep-alive','X-Accel-Buffering':'no'});res.flushHeaders();
      for(const event of job.events)res.write(`data: ${JSON.stringify(event)}\n\n`);
      if(job.done)res.end();else{job.listeners.add(res);const beat=setInterval(()=>res.write(': keepalive\n\n'),15000);beat.unref();res.on('close',()=>{clearInterval(beat);job.listeners.delete(res);});}return;
+    }
+    if(route==='email'&&req.method==='POST'){
+     const raw=await readJson(req);
+     if(!raw||typeof raw!=='object'||Array.isArray(raw)||Object.keys(raw).some(key=>!['recipient','enabled','projectVersion'].includes(key))||typeof raw.recipient!=='string'||raw.recipient.length>254||raw.enabled!==true||!Number.isSafeInteger(raw.projectVersion))throw new HttpError(400,'INVALID_HANDOFF','Provide an explicit recipient, enable consent, and the current project version.');
+     const result=session.latest?.result;
+     if(!result||!('uiSpec'in result))throw new HttpError(409,'NOT_READY','Build a prototype before preparing an email handoff.');
+     if(raw.projectVersion!==result.uiSpec.version)throw new HttpError(409,'STALE_PROJECT','Email handoff must reference the latest completed project.');
+     const status=await email.handoff({eventId:result.requestId,sessionId:session.id,projectId:session.id,projectVersion:result.uiSpec.version,ready:true,explicitRecipient:true,recipient:raw.recipient,projectUrl:new URL(`/api/sessions/${session.id}/export?format=html`,url.origin).href,summary:`Local demo prototype: ${result.uiSpec.screens[0].title}`.slice(0,1000)});
+     json(res,status.status==='blocked'?400:200,{...status,publicLinkAvailable:false,artifactAccess:'owner-cookie-required'});return;
     }
     if(route==='export'&&req.method==='GET'){
      const bundle=session.latest;if(!bundle||!('uiSpec'in bundle.result))throw new HttpError(409,'NOT_READY','Build a prototype before exporting.');

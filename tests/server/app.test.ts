@@ -22,10 +22,13 @@ describe('anonymous builder API',()=>{
   const result=events.find(e=>e.type==='result').result;expect(result.uiSpec.templateId).toBe('restaurant');expect(result.uiSpec.screens[0].title).toContain('Juniper');
   const config=await client.request(`/api/sessions/${id}/export?format=json`,{headers:{cookie}});expect(await config.json()).toEqual(result.uiSpec);
   const archive=await client.request(`/api/sessions/${id}/export?format=source`,{headers:{cookie}});expect(archive.headers.get('content-type')).toBe('application/zip');expect(new Uint8Array(await archive.arrayBuffer()).slice(0,4)).toEqual(new Uint8Array([80,75,3,4]));
+  const handoff=await client.request(`/api/sessions/${id}/email`,post({recipient:'person@example.com',enabled:true,projectVersion:result.uiSpec.version},cookie));expect(await handoff.json()).toEqual({status:'ready',notSent:true,reason:'email_disabled',publicLinkAvailable:false,artifactAccess:'owner-cookie-required'});
+  expect((await client.request(`/api/sessions/${id}/email`,post({recipient:'person@example.com',enabled:true,projectVersion:result.uiSpec.version+1},cookie))).status).toBe(409);
+  expect((await client.request(`/api/sessions/${id}/email`,post({recipient:'person@example.com',enabled:false,projectVersion:result.uiSpec.version},cookie))).status).toBe(400);
  });
  it('denies every session route to another browser and does not overwrite ownership',async()=>{
   const client=await setup();const a=await session(client),b=await session(client);
-  for(const path of [`/api/sessions/${a.id}`,`/api/sessions/${a.id}/export`,`/api/sessions/${a.id}/jobs/not-a-job/events`])expect((await client.request(path,{headers:{cookie:b.cookie}})).status).toBe(404);
+  for(const path of [`/api/sessions/${a.id}`,`/api/sessions/${a.id}/export`,`/api/sessions/${a.id}/jobs/not-a-job/events`,`/api/sessions/${a.id}/email`])expect((await client.request(path,{headers:{cookie:b.cookie}})).status).toBe(404);
   expect((await client.request('/api/sessions',post({id:a.id},b.cookie))).status).toBe(404);
   expect((await client.request(`/api/sessions/${a.id}`,{headers:{cookie:a.cookie}})).status).toBe(200);
  });

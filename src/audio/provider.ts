@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TranscriptSegment } from '../contracts';
 import type { CaptureSnapshot } from './capture';
+import { createCaptureRunId } from './capture';
 
 export interface SpeechUpload { sessionId: string; chunkId: string; audio: Blob; durationMs: number; signal: AbortSignal }
 export interface ProviderSpeechTransport {
@@ -107,6 +108,7 @@ export function createHttpSpeechTransport(fetcher: typeof fetch = fetch): Provid
 
 /** Fresh MediaRecorder containers per segment; memory only, with at most one outstanding upload. */
 export function createProviderCapture(options: ProviderCaptureOptions, dependencies: ProviderCaptureDependencies = {}) {
+  const runId = createCaptureRunId();
   const supported = dependencies.supported ?? (typeof MediaRecorder !== 'undefined' && typeof AudioContext !== 'undefined' && !!globalThis.navigator?.mediaDevices?.getUserMedia);
   const transport = options.transport ?? createHttpSpeechTransport();
   const acquire = dependencies.getUserMedia ?? (() => navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }));
@@ -175,7 +177,7 @@ export function createProviderCapture(options: ProviderCaptureOptions, dependenc
           const normalized = await bounded(normalize(blob), abort.signal, 10_000);
           if (!valid(version)) return;
           if (normalized.durationMs < 100) return;
-          const response = await bounded(transport.audio({ sessionId: options.sessionId, chunkId: `chunk-${++sequence}`, ...normalized, signal: abort.signal }), abort.signal, 25_000);
+          const response = await bounded(transport.audio({ sessionId: options.sessionId, chunkId: `chunk-${runId}-${++sequence}`, ...normalized, signal: abort.signal }), abort.signal, 25_000);
           if (!valid(version)) return;
           if (!response.ok || !response.segment || response.segment.sessionId !== options.sessionId) throw new Error('Transcription unavailable');
           const command = response.segment.text.trim().toLowerCase().replace(/[.!?]+$/u, '').trim();

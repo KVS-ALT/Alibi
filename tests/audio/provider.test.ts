@@ -23,6 +23,15 @@ function setup() {
 }
 afterEach(() => vi.useRealTimers());
 describe('bounded browser recording adapter', () => {
+  it('uses a fresh upload identity for a new controller in the same project session', async () => {
+    const first = setup(), second = setup();
+    await first.capture.start(); await first.capture.flush(); first.capture.dispose();
+    await second.capture.start(); await second.capture.flush(); second.capture.dispose();
+    const oldChunk = first.transport.audio.mock.calls[0][0].chunkId;
+    const newChunk = second.transport.audio.mock.calls[0][0].chunkId;
+    expect(newChunk).not.toBe(oldChunk);
+    expect(second.onSegment.mock.calls[0][0].segmentId).not.toBe(first.onSegment.mock.calls[0][0].segmentId);
+  });
   it('does no microphone acquisition or network until Start and never records after a disabled response', async () => {
     const { capture, getUserMedia, transport } = setup();
     expect(getUserMedia).not.toHaveBeenCalled(); expect(transport.start).not.toHaveBeenCalled();

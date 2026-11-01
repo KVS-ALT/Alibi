@@ -1,5 +1,12 @@
 import type { CaptureStatus, TranscriptSegment } from '../contracts';
 
+let captureInstanceCounter = 0;
+/** Independent of the project session: a restarted controller must never reuse transcript IDs. */
+export function createCaptureRunId(): string {
+  const nonce = globalThis.crypto?.randomUUID?.().replaceAll('-', '') ?? Date.now().toString(36);
+  return `${(++captureInstanceCounter).toString(36)}-${nonce}`;
+}
+
 export interface RecognitionResult {
   readonly 0: { readonly transcript: string };
   readonly isFinal: boolean;
@@ -55,6 +62,7 @@ const normalizeCommand = (text: string) => text.trim().toLowerCase().replace(/[.
 
 /** No audio buffers, recorder, storage, or provider credentials are retained here. */
 export function createSpeechCapture(options: SpeechCaptureOptions) {
+  const runId = createCaptureRunId();
   const factory = Object.hasOwn(options, 'createRecognition') ? options.createRecognition : browserRecognitionFactory();
   let snapshot: CaptureSnapshot = { status: 'idle', supported: !!factory, starting: false, interimText: '' };
   const listeners = new Set<() => void>();
@@ -125,7 +133,7 @@ export function createSpeechCapture(options: SpeechCaptureOptions) {
         if (!text || (result.isFinal && finalized.get(index) === text)) continue;
         let segment = pending.get(index);
         if (!segment) {
-          segment = { id: `${options.sessionId}:speech:${++nextSegment}`, text };
+          segment = { id: `${options.sessionId}:speech:${runId}:${++nextSegment}`, text };
           pending.set(index, segment);
         }
         segment.text = text;

@@ -20,6 +20,15 @@ function setup() {
 }
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 describe('Speechmatics realtime consented lifecycle', () => {
+  it('uses fresh segment identities for a new controller in the same project session', async () => {
+    const first = setup(), second = setup();
+    for (const value of [first, second]) {
+      await value.capture.start(); value.sockets[0].open();
+      value.sockets[0].message({ message: 'AddTranscript', metadata: { transcript: 'A new requirement', start_time: 0, end_time: 1 } });
+      value.capture.dispose();
+    }
+    expect(second.onSegment.mock.calls[0][0].segmentId).not.toBe(first.onSegment.mock.calls[0][0].segmentId);
+  });
   it('waits for explicit Start and RecognitionStarted before microphone/audio transmission', async () => {
     const { capture, tokenTransport, sockets, openAudio, audio } = setup();
     await capture.resume(); expect(tokenTransport).not.toHaveBeenCalled();

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TranscriptSegment } from '../contracts';
 import type { CaptureSnapshot } from './capture';
+import { createCaptureRunId } from './capture';
 import { encodeMonoPcmWav } from './provider';
 
 export interface SpeechmaticsSocket {
@@ -110,6 +111,7 @@ export async function openSpeechmaticsPcmSource(send: (pcm: Uint8Array) => void,
 }
 
 export function createSpeechmaticsCapture(options: SpeechmaticsCaptureOptions, dependencies: SpeechmaticsCaptureDependencies = {}) {
+  const runId = createCaptureRunId();
   const supported = dependencies.supported ?? (typeof WebSocket !== 'undefined' && typeof AudioContext !== 'undefined' && typeof AudioWorkletNode !== 'undefined' && !!globalThis.navigator?.mediaDevices?.getUserMedia);
   const getToken = options.tokenTransport ?? createHttpSpeechmaticsTokenTransport();
   const socketFactory = dependencies.createSocket ?? (url => new WebSocket(url) as unknown as SpeechmaticsSocket);
@@ -185,7 +187,7 @@ export function createSpeechmaticsCapture(options: SpeechmaticsCaptureOptions, d
             const isFinal = message.message === 'AddTranscript';
             const identity = JSON.stringify([message.metadata?.start_time, message.metadata?.end_time, text]);
             if (isFinal && finals.has(identity)) return;
-            if (!currentSegment) currentSegment = `${options.sessionId}:speechmatics:${++segmentNumber}`;
+            if (!currentSegment) currentSegment = `${options.sessionId}:speechmatics:${runId}:${++segmentNumber}`;
             const segment = { sessionId: options.sessionId, segmentId: currentSegment, text: text.trim(), isFinal };
             if (isFinal) { finals.add(identity); currentSegment = ''; if (finals.size > 10000) { fail('session_limit'); return; } }
             if (segment.text) options.onSegment(segment);

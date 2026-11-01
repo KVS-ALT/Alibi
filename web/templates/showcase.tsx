@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Portfolio, ProjectSection } from "@alibi/shared";
-import { Expand, Icon, MockFrame, ProjectDetails, Skeleton, slugUrl, type DetailsTheme } from "./parts";
+import { Expand, Icon, MockFrame, ProjectDetails, Skeleton, portfolioTitle, projectPreviewHtml, type DetailsTheme } from "./parts";
 
 // Designer-dev portfolio in the style of jonathanzhou.dev: big name, "currently" list,
 // image-topped project cards with CATEGORY • YEAR tags.
@@ -44,11 +44,8 @@ export default function Showcase({ portfolio }: { portfolio: Portfolio }) {
                   <span key={r}>{r}</span>
                 ))}
               </div>
-              <h1 className="mt-2 text-5xl font-semibold leading-[0.95] tracking-tight sm:text-7xl">
-                {hero.name.split(" ")[0]}
-                <span className="font-[family-name:var(--font-serif)] font-normal italic text-indigo-600">
-                  {hero.name.split(" ").slice(1).join(" ")}
-                </span>
+              <h1 className="mt-2 break-words text-5xl font-semibold leading-[1.02] tracking-tight sm:text-7xl">
+                {portfolioTitle(hero.name)}
               </h1>
               <p className="mt-8 max-w-xl text-lg leading-relaxed text-neutral-600">{hero.bio}</p>
 
@@ -112,11 +109,9 @@ function Card({ p }: { p: ProjectSection }) {
   return (
     <article className="animate-[fadein_.6s_ease-out]">
       <button onClick={() => setOpen(!open)} className="group -m-2 block w-[calc(100%+1rem)] rounded-xl p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-600" aria-expanded={open}>
-        {p.mockHtml && (
-          <div className="transition-transform duration-300 group-hover:-translate-y-1">
-            <MockFrame html={p.mockHtml} url={slugUrl(p.title)} />
-          </div>
-        )}
+        <div className="transition-transform duration-300 group-hover:-translate-y-1">
+          <MockFrame html={projectPreviewHtml(p)} title={p.title} />
+        </div>
         <div className="mt-4 flex items-start justify-between gap-4">
           <div>
             <h3 className="text-xl font-semibold">{p.title}</h3>

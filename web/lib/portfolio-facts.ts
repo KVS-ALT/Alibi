@@ -13,7 +13,7 @@ export function applyConversationFacts(result:PortfolioFactsOutput,registry:Proj
   const source=candidate??fallback.projects[identity.id];if(!source)continue;
   const replace=(value:string)=>source.title&&source.title!==identity.name?value.split(source.title).join(identity.name):value;
   const project:ProjectSection={...source,title:identity.name,tagline:replace(source.tagline),summary:replace(source.summary),highlights:mergeProjectHighlights(source.highlights.map(replace),identity.spokenFeatures)};
-  project.mockHtml=renderProjectMock(project);projects[identity.id]=project;
+  project.mockHtml=renderProjectMock(project,identity.designKey??identity.id);projects[identity.id]=project;
  }
  const portfolio=Portfolio.parse({...result.portfolio,projects,skills:[...new Set([...fallback.skills,...Object.values(projects).flatMap(project=>project.stack)])].slice(0,16)});
  const knownName=builderName||fallback.hero?.name;

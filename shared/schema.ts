@@ -34,6 +34,7 @@ export const ProjectSection = z.object({
   highlights: z.array(z.string()),
   metrics: z.array(z.object({ label: z.string(), value: z.string() })),
   stack: z.array(z.string()),
+  details: z.array(z.object({ label: z.string().max(60), value: z.string().max(600) })).max(8).optional(),
   diagramMermaid: z.string().optional(),
   commitGraph: z.array(z.number()).optional(), // commits per day, oldest first
   commits: z.number().optional(),

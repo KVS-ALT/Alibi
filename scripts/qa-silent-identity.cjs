@@ -45,7 +45,7 @@ assert.deepEqual(Object.keys(renamed.portfolio.projects), [projectId]);
       await page.route('**/api/sessions/silent-identity-fixture', route => route.fulfill({ json: { ...session, portfolio: current.portfolio, version, status: 'ready', active: false } }));
 
       async function inspect(state, expectedName, expectedTitle) {
-        await page.waitForFunction(name => document.querySelector('main h1')?.textContent.replace(/\s/g, '') === name.replace(/\s/g, ''), expectedName);
+        await page.waitForFunction(name => document.querySelector('main h1')?.textContent.replace(/\s/g, '') === `${name}${/s$/i.test(name)?'’':'’s'} portfolio`.replace(/\s/g, ''), expectedName);
         await page.evaluate(async () => {
           document.body.getBoundingClientRect();
           await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})));
@@ -75,7 +75,7 @@ assert.deepEqual(Object.keys(renamed.portfolio.projects), [projectId]);
       await page.locator('main article button[aria-expanded]').click();
       await page.getByText('how it works', { exact: true }).waitFor();
       await page.getByText('Modelmate supports STEP export', { exact: true }).waitFor();
-      await page.frameLocator('iframe').getByRole('heading', { name: 'Modelmate', exact: true }).waitFor();
+      await page.frameLocator('iframe').getByRole('heading', { name: 'Modelmate', exact: true }).first().waitFor();
       await inspect('expanded', 'Harsh Anand', 'Modelmate');
       current = renamed; version++;
       await page.getByRole('heading', { name: 'Draftcheck', exact: true }).waitFor();

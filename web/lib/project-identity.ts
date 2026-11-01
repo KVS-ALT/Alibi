@@ -2,7 +2,7 @@ import type { Portfolio } from '@alibi/shared';
 
 export interface ProjectIdentity {
  id:string;name:string;nameSource:'spoken'|'descriptive';aliases:string[];
- domain:string;description:string;mentions:string[];spokenFeatures?:string[];
+ domain:string;description:string;mentions:string[];spokenFeatures?:string[];designKey?:string;
 }
 export interface ProjectIdentityRegistry { projects:ProjectIdentity[];nextId:number;activeId?:string }
 export interface ProjectMention {
@@ -106,6 +106,6 @@ export function spokenProjectName(clause:string):string|undefined{
  const match=clause.match(/\b(?:called|named|rename(?:d)?\s+(?:it|the\s+\w+)\s+to)\s+(?:["“']([^"”'\n]{1,80})["”']|([^.!?;\n]{1,100}))/iu);
  if(!match)return undefined;
  let name=(match[1]||match[2]).split(/\s+(?:for|with|which|that|because|where|and|but|now|actually|it\s+(?:has|is|does)|we\s+(?:have|use))\b/i)[0].trim().replace(/[,:]+$/,'');
- if(!name||name.split(/\s+/).length>6||/^(?:a|an|the|it|this|that|something)\b/i.test(name))return undefined;
+ if(!name||name.split(/\s+/).length>6||/^(?:a|an|the|it|this|that|something|hey|hello|um|uh)\b/i.test(name)||/\b(?:my name(?: is|'s)?|call me|i'm|i am)\b/i.test(name))return undefined;
  name=clean(name);return name;
 }

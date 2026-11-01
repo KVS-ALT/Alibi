@@ -5,12 +5,12 @@ const ts = require('typescript');
 const root = path.resolve(__dirname, '../..');
 
 // Execute production TypeScript with only external I/O replaced. No live providers.
-function harness(overrides = {}, env = {}) {
+function harness(overrides = {}, env = {}, runtime = {}) {
   const cache = new Map(), timers = new Map(); let timerId = 0;
   const context = vm.createContext({ console, Buffer, URL, Request, Response, TextEncoder, TextDecoder,
     AbortController, AbortSignal, DOMException, Uint8Array, structuredClone,
-    process: { env }, setTimeout(fn, ms) { const id = ++timerId; timers.set(id, { fn, ms }); return id; },
-    clearTimeout(id) { timers.delete(id); } });
+    process: { env }, setTimeout(fn, ms) { if(runtime.realTimers)return setTimeout(fn,ms); const id = ++timerId; timers.set(id, { fn, ms }); return id; },
+    clearTimeout(id) { if(runtime.realTimers)clearTimeout(id);else timers.delete(id); } });
   function load(relative) {
     const filename = path.resolve(root, relative);
     if (cache.has(filename)) return cache.get(filename).exports;

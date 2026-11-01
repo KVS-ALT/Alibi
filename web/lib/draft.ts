@@ -1,5 +1,7 @@
 import { Claims, Portfolio, type ProjectSection } from '@alibi/shared';
 import { isProjectFeatureStatement, mergeProjectHighlights, resolveProjectIdentity, seedProjectRegistry, spokenProjectName, type ProjectIdentityRegistry } from './project-identity';
+import { deriveConversationIdentity, stripPersonalIntroductions } from './conversation-identity';
+import { renderDesignedProject } from './mock-designs';
 
 interface Recipe {
  key: string; match: RegExp; name: string; category: string; tagline: string; summary: string;
@@ -17,7 +19,6 @@ const recipes: Recipe[] = [
  { key:'developer',match:/\b(code|developer|deploy|debug|API|github|software|pull request)\b/i,name:'Developer release tool',category:'DEVELOPER TOOL',tagline:'Make the next release easier to understand.',summary:'A release workspace for small software teams. It groups code changes, tracks deployment checks and turns scattered pull-request notes into a useful release summary.',highlights:['Grouped pull requests into a release review queue','Tracked build checks and deployment status','Generated concise release notes from structured changes'],metrics:[['sample releases','18'],['checks tracked','64'],['summary time','2.1 sec']],stack:['Next.js','TypeScript','GitHub API'],columns:['Change','Checks','Release'],rows:[['Search indexing','6 passed','Ready'],['Invite flow','4 passed','In review'],['Usage dashboard','5 passed','Released']] },
 ];
 const generic: Recipe = {key:'workflow',match:/./,name:'Workflow tool',category:'WORKFLOW TOOL',tagline:'Turn scattered requests into a clear next action.',summary:'A lightweight workspace for teams handling repeated requests. It captures incoming work, assigns an owner and keeps decisions and follow-ups in one searchable queue.',highlights:['Grouped incoming requests by urgency and owner','Tracked decisions without losing the original context','Built a searchable queue with clear handoff states'],metrics:[['sample requests','84'],['pilot testers','12'],['handoff time saved','26%']],stack:['Next.js','TypeScript','PostgreSQL'],columns:['Request','Owner','Status'],rows:[['Review onboarding','Maya','In progress'],['Prepare weekly report','Alex','Ready'],['Update client brief','Jordan','Needs review']]};
-const escape = (value: string) => value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function genericFor(clause: string): Recipe {
  const brief=clause.replace(/^.*?\b(?:working on|built|building|created|made|making|developed|launched|designed|designing)\s+/i,'').replace(/^\s*(?:a prototype|a|an|the|this)\s+/i,'').replace(/\s+(?:called|named)\s+.*$/i,'').replace(/\b(?:um|uh|basically)\b[,.]?\s*/gi,'').replace(/\s+/g,' ').trim().replace(/[.!?]+$/,'').slice(0,240);
  const product=brief.match(/^([a-z0-9-]+(?:\s+[a-z0-9-]+){0,2})\s+(app|tool|platform|website|service|assistant|tracker|workspace|system)\b/i);
@@ -37,9 +38,8 @@ function genericFor(clause: string): Recipe {
 function recipeFor(project: ProjectSection) { return recipes.find(recipe => recipe.match.test(`${project.title} ${project.category} ${project.summary}`)) ?? genericFor(project.summary); }
 
 /** Trusted local rendering avoids asking a slow model to generate thousands of HTML tokens. */
-export function renderProjectMock(project: ProjectSection): string {
- const recipe = recipeFor(project);
- return `<div class="h-full bg-slate-950 p-10 text-slate-100"><header class="flex items-center justify-between border-b border-white/10 pb-6"><div><p class="text-xs uppercase tracking-widest text-teal-300">${escape(project.category)}</p><h1 class="mt-2 text-3xl font-semibold">${escape(project.title)}</h1></div><span class="rounded-full bg-teal-400/10 px-4 py-2 text-sm text-teal-200">Workspace</span></header><main><p class="mt-6 text-lg text-slate-300">${escape(project.tagline)}</p><div class="mt-6 grid grid-cols-3 gap-4">${project.metrics.slice(0,3).map(metric=>`<section class="rounded-xl border border-white/10 p-5"><p class="text-2xl font-semibold">${escape(metric.value)}</p><p class="mt-1 text-sm text-slate-400">${escape(metric.label)}</p></section>`).join('')}</div><section class="mt-7 rounded-xl border border-white/10 p-5"><div class="grid grid-cols-3 gap-4 border-b border-white/10 pb-3 text-xs uppercase text-slate-400">${recipe.columns.map(label=>`<span>${escape(label)}</span>`).join('')}</div>${recipe.rows.map(row=>`<div class="grid grid-cols-3 gap-4 border-b border-white/5 py-4 text-sm">${row.map((cell,index)=>`<span class="${index===2?'text-teal-300':'text-slate-200'}">${escape(cell)}</span>`).join('')}</div>`).join('')}</section></main></div>`;
+export function renderProjectMock(project: ProjectSection,stableId?:string): string {
+ return renderDesignedProject(project,stableId);
 }
 
 /** Deterministic fictional detail, grounded in the stated product rather than a generic placeholder. */
@@ -49,13 +49,18 @@ export function createDraftPortfolio(transcript: string, previous?: Portfolio,op
  const portfolio: Portfolio = prior.success ? structuredClone(prior.data) : {templateId:/\b(dark|vercel|deployment)\b/i.test(transcript)?'geist':/\b(minimal|lowercase)\b/i.test(transcript)?'lowercase':'showcase',skills:[],projects:{},contradictions:[]};
  // Questions help the model, but must not independently invent a second project.
  const normalized=transcript.replace(/[’‘]/g,"'");
+ const personalIdentity=options.builderName??deriveConversationIdentity(normalized).name;
  const turns=[...normalized.matchAll(/\[(S\d+|UU)\]\s*([^]*?)(?=\[(?:S\d+|UU)\]|$)/g)];
  const builder=options.builderSpeaker??turns.find(turn=>/\b(?:i(?:'ve|'m)?|we(?:'ve|'re)?)\s+(?:(?:have|am|are|been|basically|currently|just)\s+)*(?:built|building|created|made|developed|working|making|launched|designed|designing)\b/i.test(turn[2]))?.[1];
  const builderText=builder?turns.filter(turn=>turn[1]===builder).map(turn=>turn[2]).join(' '):normalized;
  const clauses=builderText.replace(/\[(?:S\d+|UU)\]\s*/g,'').split(/(?<=[.!?])\s+|(?=\b(?:on the side|separately|another project|a separate project|a different project)\b)/i).filter(part=>!part.trim().endsWith('?'));
  const statements=clauses.join(' ');
  const selections:{recipe:Recipe;clause:string}[]=[];
- for(const clause of clauses){
+ for(const rawClause of clauses){
+  const clause=stripPersonalIntroductions(rawClause);
+  // A construction verb without a product brief is a partial utterance, not a product.
+  const construction=clause.match(/\b(?:working on|built|building|created|made|making|developed|developing|launched|designed|designing)\b\s*([^]*)/i);
+  if(construction&&!construction[1].replace(/[\s\p{P}\p{S}]/gu,'').replace(/^(?:a|an|the|this|hey|hello|um|uh)$/i,''))continue;
   if(!isProjectFeatureStatement(clause)&&!/\b(?:built|building|working|making|created|develop(?:ed|ing|s|ment)?|design(?:ed|ing|s)?|projects?|websites?|apps?|applications?|tools?|platforms?|marketplaces?|problems?|helps?|needs?|wish|waste|struggl(?:e|ing)|automate|actually|called)\b/i.test(clause))continue;
   let found=recipes.filter(recipe=>recipe.match.test(clause));
   // Inventory/payment APIs can be features of a product rather than separate products.
@@ -63,7 +68,11 @@ export function createDraftPortfolio(transcript: string, previous?: Portfolio,op
   if(found.some(recipe=>recipe.key==='finance'))found=found.filter(recipe=>recipe.key!=='commerce');
   if(found.some(recipe=>recipe.key==='audio-hardware'))found=found.filter(recipe=>recipe.key!=='cad'&&recipe.key!=='developer');
   if(found.length>1&&!/\b(?:also|and a|another|second)\b/i.test(clause))found=found.slice(0,1);
-  if(!found.length)found=[genericFor(clause)];
+  if(!found.length){
+   const fallback=genericFor(clause);
+   if(personalIdentity&&fallback.name.toLowerCase()===personalIdentity.toLowerCase()&&!spokenProjectName(clause))continue;
+   found=[fallback];
+  }
   for(const recipe of found)selections.push({recipe,clause});
  }
  let projectRegistry=seedProjectRegistry(previous,options.projectRegistry);
@@ -79,16 +88,24 @@ export function createDraftPortfolio(transcript: string, previous?: Portfolio,op
     const project=existing;project.title=identity.name;
     const userCount=clause.match(/\b(\d{1,4})\s+(?:pilot\s+)?(?:users|testers|learners|members)\b/i);
     if(userCount){const metric=project.metrics.find(metric=>/user|tester|learner|member/i.test(metric.label));if(metric)metric.value=userCount[1];}
-    project.mockHtml=renderProjectMock(project);continue;
+    project.mockHtml=renderProjectMock(project,identity.designKey??identity.id);continue;
    }
    if (Object.keys(portfolio.projects).length>=3) break;
    const name = identity.name;
    const project: ProjectSection = {status:'ready',title:name,category:recipe.category,year:new Date().getUTCFullYear(),tagline:recipe.tagline,summary:recipe.summary,highlights:[...recipe.highlights],metrics:recipe.metrics.map(([label,value])=>({label,value})),stack:[...recipe.stack]};
-   project.mockHtml=renderProjectMock(project);portfolio.projects[identity.id]=project;
+   project.mockHtml=renderProjectMock(project,identity.designKey??identity.id);portfolio.projects[identity.id]=project;
  }
- for(const identity of projectRegistry.projects){const project=portfolio.projects[identity.id];if(project&&identity.spokenFeatures?.length){project.highlights=mergeProjectHighlights(project.highlights,identity.spokenFeatures);project.mockHtml=renderProjectMock(project);}}
+ for(const identity of projectRegistry.projects){
+  const project=portfolio.projects[identity.id];if(!project)continue;
+  if(identity.spokenFeatures?.length)project.highlights=mergeProjectHighlights(project.highlights,identity.spokenFeatures);
+  const details=new Map((project.details??[]).map(detail=>[detail.label.toLowerCase(),detail]));
+  details.set('product brief',{label:'Product brief',value:identity.description.slice(0,600)});
+  if(!details.has('prototype approach'))details.set('prototype approach',{label:'Prototype approach',value:`Prototype built with ${project.stack.join(', ')}. ${project.highlights[0]}`.slice(0,600)});
+  project.details=[...details.values()].slice(-8);
+  project.mockHtml=renderProjectMock(project,identity.designKey??identity.id);
+ }
  const projects=Object.entries(portfolio.projects);
- const spokenName=options.builderName||statements.match(/\bmy name is\s+([a-zA-Z][a-zA-Z'-]*)/i)?.[1];
+ const spokenName=personalIdentity;
  if(projects.length||spokenName){
    const name=spokenName||portfolio.hero?.name||'Your portfolio';
    portfolio.hero={...portfolio.hero,name,handle:portfolio.hero?.handle||'builder',roles:portfolio.hero?.roles||['student developer'],bio:portfolio.hero?.bio||(projects.length?`Building ${projects.map(([,project])=>project.title).join(', ')}: practical tools for everyday problems.`:''),currently:projects.slice(-2).map(([,project])=>'building '+project.title)};

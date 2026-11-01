@@ -89,3 +89,26 @@ test('reported self-introduction and quoted project claims do not take over iden
   assert.equal(state.builderSpeaker, undefined);
   assert.equal(state.name, undefined);
 });
+
+test('a later introduction preserves an earlier generic project claim in the same clause', () => {
+  const h = harness();
+  const { stripPersonalIntroductions, deriveConversationIdentity } = h.load('web/lib/conversation-identity.ts');
+  const { createDraftPortfolio } = h.load('web/lib/draft.ts');
+  const text = "I'm building a neighborhood dog walking scheduler and my name is Harsh.";
+  assert.equal(stripPersonalIntroductions(text), "I'm building a neighborhood dog walking scheduler and .");
+  const identity = deriveConversationIdentity(text);
+  assert.equal(identity.name, 'Harsh');
+  assert.equal(identity.builderKey, 'transcript:anonymous');
+  assert.equal(Object.keys(createDraftPortfolio(text).portfolio.projects).length, 1);
+});
+
+test('a later contracted introduction cannot leave a truncated project title', () => {
+  const h = harness();
+  const { stripPersonalIntroductions } = h.load('web/lib/conversation-identity.ts');
+  const { createDraftPortfolio } = h.load('web/lib/draft.ts');
+  const text = "I'm building a yoga teacher booking platform and I'm Harsh.";
+  assert.equal(stripPersonalIntroductions(text), "I'm building a yoga teacher booking platform and .");
+  const projects = Object.values(createDraftPortfolio(text).portfolio.projects);
+  assert.equal(projects.length, 1);
+  assert.match(projects[0].title, /^Yoga teacher/i);
+});

@@ -136,7 +136,7 @@ describe('schema boundary', () => {
 
   it('rejects prototype-reserved identifiers and malformed reference keys', async () => {
     const spec = await generated();
-    for (const key of ['constructor', 'prototype', '__proto__', 'bad key']) {
+    for (const key of ['constructor', 'prototype', '__proto__', 'toString', 'valueOf', 'hasOwnProperty', 'bad key']) {
       const modified = structuredClone(spec);
       modified.screens[0].components[0].id = key;
       expect(validateUiSpec(modified).success, key).toBe(false);

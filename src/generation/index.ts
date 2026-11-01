@@ -5,7 +5,8 @@ import { getTemplateScenario } from './scenarios';
 
 export const GENERATOR_MODE = 'Demo generator';
 const text = z.string().max(12000).refine(v => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v), 'Unsupported control character');
-const id = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/).refine(v => !['__proto__','constructor','prototype'].includes(v), 'Reserved identifier');
+const reservedIdentifiers = new Set([...Object.getOwnPropertyNames(Object.prototype), 'prototype']);
+const id = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/).refine(v => !reservedIdentifiers.has(v), 'Reserved identifier');
 const primitive = z.union([text, z.number().finite(), z.boolean(), z.null()]);
 const action = z.discriminatedUnion('type', [
   z.object({type:z.literal('setState'),key:id,value:primitive}).strict(),

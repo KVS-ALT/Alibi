@@ -85,7 +85,7 @@ export function mountStandalone(spec: UiSpec) {
     });
   }
   function render() {
-    const template = document.getElementById('screen-' + active) as HTMLTemplateElement;
+    const template = document.querySelector<HTMLTemplateElement>('template#screen-' + active)!;
     root.replaceChildren(template.content.cloneNode(true));
     const screen = currentScreen();
     (root.querySelector('.template-brand') as HTMLButtonElement).onclick = () => apply([{ type: 'navigate', screenId: spec.screens[0].id }]);

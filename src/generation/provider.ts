@@ -175,6 +175,7 @@ export function createOpenAIProvider(config: OpenAIProviderOptions = {}) {
       const serialized = JSON.stringify(request);
       if (serialized.includes(config.apiKey!) || new TextEncoder().encode(serialized).byteLength > 64000 || !requestSchema.safeParse(request).success) throw new Error();
       const initial = await generatePrototype(request, { templateId: options.templateId, signal: options.signal });
+      if (options.signal?.aborted) throw new DOMException('Generation aborted', 'AbortError');
       if (!('uiSpec' in initial)) throw new Error();
       baseline = initial.uiSpec;
     } catch {

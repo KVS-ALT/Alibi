@@ -161,4 +161,13 @@ describe('server-only OpenAI structured generation', () => {
     expect(await configured(transport).generate(request())).toMatchObject({ errorCode: 'PROVIDER_RATE_LIMIT', retryable: true });
     expect(transport).toHaveBeenCalledTimes(1);
   });
+
+  it('does not start transport when cancelled while preparing the reviewed baseline', async () => {
+    const transport = vi.fn<typeof fetch>().mockImplementation(() => new Promise<Response>(() => {}));
+    const controller = new AbortController();
+    const pending = configured(transport).generate(request(), { signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(transport).not.toHaveBeenCalled();
+  });
 });

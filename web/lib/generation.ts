@@ -29,10 +29,11 @@ export interface GenerationOutput { portfolio: Portfolio; claims: Claims; projec
 // Any OpenAI-compatible provider; Featherless by default. LLM_* lets the demo run on a faster model (e.g. Gemini).
 export const GENERATION_ENDPOINT = (process.env.LLM_BASE_URL?.trim() || "https://api.featherless.ai/v1").replace(/\/$/, "") + "/chat/completions";
 const ENDPOINT = GENERATION_ENDPOINT;
-export const DEFAULT_GENERATION_MODEL = 'Qwen/Qwen3-30B-A3B-Instruct-2507';
-const DEEPSEEK_MODEL='deepseek-ai/DeepSeek-V3.2';
+export const DEFAULT_GENERATION_MODEL = 'deepseek-ai/DeepSeek-V3.2';
+const DEEPSEEK_MODEL=DEFAULT_GENERATION_MODEL;
+const QWEN_MODEL='Qwen/Qwen3-30B-A3B-Instruct-2507';
 const LEGACY_MODEL='Qwen/Qwen2.5-7B-Instruct';
-const SUPPORTED_MODELS = new Set([DEFAULT_GENERATION_MODEL,DEEPSEEK_MODEL,LEGACY_MODEL]);
+const SUPPORTED_MODELS = new Set([DEFAULT_GENERATION_MODEL,QWEN_MODEL,LEGACY_MODEL]);
 const MAX_REQUEST_BYTES = 48000;
 const MAX_RESPONSE_BYTES = 96000;
 const MAX_OUTPUT_TOKENS = 2800;
@@ -268,7 +269,7 @@ export async function generatePortfolio(input: GenerationInput, options: Generat
     input.signal?.throwIfAborted();
     const remaining = deadline - Date.now();
     if (remaining <= 0) return fallback('provider_timeout');
-    const payload = JSON.stringify({ model: options.model, max_tokens: compact?450:MAX_OUTPUT_TOKENS, temperature: 0.1, stream: false, response_format: { type: "json_object" }, ...(options.model===DEEPSEEK_MODEL?{chat_template_kwargs:{thinking:false}}:options.model===DEFAULT_GENERATION_MODEL?{chat_template_kwargs:{enable_thinking:false}}:process.env.LLM_REASONING_EFFORT?{reasoning_effort:process.env.LLM_REASONING_EFFORT}:{}),messages });
+    const payload = JSON.stringify({ model: options.model, max_tokens: compact?450:MAX_OUTPUT_TOKENS, temperature: 0.1, stream: false, response_format: { type: "json_object" }, ...(options.model===DEEPSEEK_MODEL?{chat_template_kwargs:{thinking:false}}:options.model===QWEN_MODEL?{chat_template_kwargs:{enable_thinking:false}}:process.env.LLM_REASONING_EFFORT?{reasoning_effort:process.env.LLM_REASONING_EFFORT}:{}),messages });
     if (new TextEncoder().encode(payload).byteLength > MAX_REQUEST_BYTES) return fallback('request_size');
     try {
       const response=await requestOnce(payload,options,input.signal,remaining);

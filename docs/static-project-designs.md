@@ -6,7 +6,7 @@ Keith's Claude Code designs from [PR #6](https://github.com/KVS-ALT/Alibi/pull/6
 
 Previews are generated locally as escaped HTML with static CSS. The empty iframe sandbox and CSP block scripts and external resources. Claude's Tailwind styles are compiled ahead of time by `node scripts/build-mock-kit-styles.cjs`; no Tailwind CDN, Google Fonts request or model-generated HTML is needed. Portfolio cards use plain project labels instead of invented URLs or repository addresses. `/preview/kits` displays all six Claude layouts in both themes.
 
-The default provider model is Qwen/Qwen3-30B-A3B-Instruct-2507 with thinking disabled. DeepSeek V3.2 remains an explicit configuration option. Modern models return compact content patches for registered project IDs; local code owns names, identity, layout and HTML. Optional bounded label/value details appear in the existing expanded project. The AI has a shared 7.2-second deadline including a validation retry; the local draft publishes first.
+The default provider model is deepseek-ai/DeepSeek-V3.2 with thinking disabled. Qwen remains an explicit configuration option. Modern models return compact content patches for registered project IDs; local code owns names, identity, layout and HTML. Optional bounded label/value details appear in the existing expanded project. The AI has a shared 7.2-second deadline including a validation retry; the local draft publishes first.
 
 The project overview and writing standards in `web/lib/prompts/portfolio-guide.md` are loaded once and included in generation prompts. Its naming advice is adapted to preserve the existing registered identity rules: unnamed projects retain descriptive labels, names are never invented, and ambiguous speech never triggers a question or a new control.
 

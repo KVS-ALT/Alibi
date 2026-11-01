@@ -4,11 +4,12 @@ const {harness}=require('./helpers/harness.cjs');
 const transcript="My name is Priya Shah. I built a car marketplace called Roadnest. Users can book test drives.";
 const envelope=value=>Response.json({choices:[{finish_reason:'stop',message:{role:'assistant',content:JSON.stringify(value)}}]});
 
-test('modern default requests a compact data patch and disables Qwen thinking',async()=>{
+test('DeepSeek default requests a compact data patch and disables thinking',async()=>{
  const {generatePortfolio,DEFAULT_GENERATION_MODEL}=harness().load('web/lib/generation.ts');let sent,diagnostic;
  const result=await generatePortfolio({transcript},{apiKey:'test-placeholder-key',model:DEFAULT_GENERATION_MODEL,fetcher:async(_,init)=>{sent=JSON.parse(init.body);return envelope({projects:[{id:'project-1',summary:'Compares dealer overstock for first-time buyers.',details:[{label:'Inventory refresh',value:'Every 15 minutes'}],stack:['TypeScript','PostgreSQL']}],bio:'Builds practical tools for car buyers.'});},onDiagnostic:value=>{diagnostic=value;}});
- assert.equal(DEFAULT_GENERATION_MODEL,'Qwen/Qwen3-30B-A3B-Instruct-2507');
- assert.equal(sent.chat_template_kwargs.enable_thinking,false);
+ assert.equal(DEFAULT_GENERATION_MODEL,'deepseek-ai/DeepSeek-V3.2');
+ assert.equal(sent.model,DEFAULT_GENERATION_MODEL);
+ assert.equal(sent.chat_template_kwargs.thinking,false);
  assert.ok(sent.max_tokens<=900);
  assert.ok(sent.messages[0].content.length<2000,'prompt must not send the full portfolio schema/example');
  assert.equal(diagnostic.outcome,'model');

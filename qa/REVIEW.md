@@ -65,3 +65,13 @@ Actually viewed the refreshed six contact sheets for templates 11–20: contact-
 An additional export identifier-collision regression passes (14/14 export tests): a valid component named screen-contact does not shadow the internal screen template in the current HTML ordering. No defect was observed for that edge case.
 
 The upcoming mobile-first main builder redesign has not yet been reviewed by this report. These results certify the reviewed template/domain views and workflows only, not later shell edits.
+
+## Final mobile shell and waitlist evidence
+
+Actually viewed mobile-first-idle.png, mobile-first-listening-mock.png, mobile-first-building-delay.png, mobile-first-preview.png, mobile-first-keyboard-focus.png, and mobile-waitlist-receipt.png in the UI qa folder. At 390px the idle screen exposes Start session in the first viewport and keeps typing collapsed; the generated bakery preview fits the viewport; the typing disclosure shows a visible keyboard focus ring. The listening screenshot is explicitly a recognition TEST STUB, not live hardware or background-capture evidence. The UI runner's mobile-first-report.json records width 390, a working mute transition, and reduced-motion computed animation none / transition 0s.
+
+The UI runner's actual-browser waitlist-report.json confirms only text/name and email inputs, local receipt, reload restoration of the fictional visitor fields and receipt, fresh-session preview clearing, and no private email in exported source. The receipt screenshot was actually viewed. Independently, test fd2ea1b verifies the same storage/export privacy boundaries against canonical application code.
+
+Latest independent review suite evidence comprises 3 session cases, 2 preview interaction cases, 14 export/security cases, 20 domain scenario cases, and 1 waitlist privacy case. These were run in targeted groups; the integration owner runs the combined canonical suite and production build after merges. The last review addition, 5f32b14, covers obsolete filter options across template changes and awaits the integration owner's final fix/check.
+
+No new visual blocker was observed in the final mobile shell or assigned ten refreshed domain templates. Live microphone hardware, actual speech accuracy, locked-screen/background recording, external email delivery, real bookings, payments, authentication, and production service integration were not verified or claimed. Email delivery remains disabled; waitlist storage is the latest form state in this browser tab, with no subscriber database or entry history.

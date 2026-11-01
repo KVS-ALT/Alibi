@@ -33,8 +33,21 @@ export function createSpeechmaticsTokenProvider(config: SpeechmaticsConfig = {},
         method: 'POST', redirect: 'error', signal, headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ ttl: 60 }),
       }));
       if (!response.ok) return fail(response.status === 429 ? 'rate_limited' : 'provider_auth');
-      const body = await guarded(response.text());
-      if (body.length > 16_384 || signal.aborted || disposed) return fail(signal.aborted ? 'cancelled' : 'invalid_provider_response');
+      if (Number(response.headers.get('content-length')) > 16_384) { await response.body?.cancel(); return fail('invalid_provider_response'); }
+      const reader = response.body?.getReader();
+      if (!reader) return fail('invalid_provider_response');
+      const decoder = new TextDecoder(); let body = '', bytes = 0;
+      try {
+        while (true) {
+          const { value, done } = await guarded(reader.read());
+          if (done) break;
+          bytes += value.byteLength;
+          if (bytes > 16_384) { await reader.cancel(); return fail('invalid_provider_response'); }
+          body += decoder.decode(value, { stream: true });
+        }
+        body += decoder.decode();
+      } finally { if (signal.aborted) void reader.cancel().catch(() => {}); }
+      if (signal.aborted || disposed) return fail('cancelled');
       const raw: unknown = JSON.parse(body);
       const token = raw && typeof raw === 'object' ? (raw as { key_value?: unknown }).key_value : undefined;
       if (typeof token !== 'string' || token.length > 4096 || !/^[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+$/i.test(token) || token.includes(config.apiKey!)) return fail('invalid_provider_response');

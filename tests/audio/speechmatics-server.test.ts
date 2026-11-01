@@ -35,4 +35,11 @@ describe('Speechmatics server temporary token boundary', () => {
     const pending = provider.issueToken(input); await vi.advanceTimersByTimeAsync(100);
     expect(await pending).toMatchObject({ ok: false, code: 'provider_timeout' });
   }, 1000);
+  it('cancels an oversized response stream before buffering the whole response', async () => {
+    let pulls = 0; const cancel = vi.fn();
+    const stream = new ReadableStream<Uint8Array>({ pull(controller) { pulls++; controller.enqueue(new Uint8Array(8000)); if (pulls === 20) controller.close(); }, cancel });
+    const provider = createSpeechmaticsTokenProvider(config, { fetcher: async () => new Response(stream) });
+    expect(await provider.issueToken(input)).toMatchObject({ ok: false, code: 'invalid_provider_response' });
+    expect(pulls).toBeLessThanOrEqual(4); expect(cancel).toHaveBeenCalled();
+  });
 });

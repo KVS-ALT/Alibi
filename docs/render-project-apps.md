@@ -24,6 +24,15 @@ Set DATABASE_URL and initialize the existing schema for durable portfolios;
 otherwise generated links disappear on process restart. Browser-local workspace
 items are not shared across devices. /p/demo-backup is the explicit fixture.
 
+For hosted private demos, `ALIBI_UNLIMITED_USAGE=true` removes the app's inference
+count, speech/audio, 90-second grant and fixed expiry limits. The private demo
+token and `INTERACTIVE_TEST_TOKEN_SHA256` are still required before starting;
+the newly claimed HttpOnly cookie lasts for the browser session rather than
+15 minutes. Existing provider enable flags and server-side credentials remain
+required. External provider quotas, rate limits and charges still apply.
+Each ready project is linked from both the capture home and public portfolio,
+using its actual session slug at `/p/<slug>/project/<id>` on the Render host.
+
 Validation at this branch's implementation snapshot:
 - `npm test`: all 92 offline regression tests pass.
 - `npm run build:web`: production compilation, type checking and page generation pass.

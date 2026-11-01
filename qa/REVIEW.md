@@ -47,3 +47,11 @@ Browser automation later timed out on Page.getFrameTree. Remaining visual review
 - Recheck domain-specific configurations and representative mobile forms after generation adds them.
 - Final integration production build and complete suite must run after all merges; earlier test passes do not cover later edits.
 
+
+## Domain scenario and export validation follow-up
+
+New domain generator 1115a44 was reviewed through independent executable tests. All 20 cases passed: each asserts a domain-specific data column and form field, executes the exported JavaScript, filters to the exact expected category rows, navigates to its form, rejects an empty required form, fills relevant selects/dates/numbers/email, and observes a local receipt. Examples include bakery item/allergens data and pickup-date, restaurant dish data and reservation-guests, marketplace product data and bag-quantity, wedding moment data and rsvp-attendance.
+
+A thirteenth export security case demonstrated that a separate button with submitDemoForm could bypass required target form validation. Both exported runtimes were fixed in 10a2fc0. The regression is now green. Full independent integration command after those changes: 4 files, 38 tests passed (session 3, preview 2, export/security 13, domain scenarios 20).
+
+Live browser verification on port 3001 found a stale server process returning generic rows after the domain code was built. Integration is restarting it. New domain browser screenshots and form layout checks remain pending; old visual passes are not being counted as new domain verification.

@@ -1,0 +1,155 @@
+{
+  "sessionId": "synthetic-demo-001",
+  "transcript": [
+    {
+      "sessionId": "synthetic-demo-001",
+      "segmentId": "segment-1",
+      "text": "Build a fictional studio booking demo with a service filter and booking form.",
+      "isFinal": true
+    }
+  ],
+  "brief": {
+    "sessionId": "synthetic-demo-001",
+    "version": 1,
+    "purpose": "Demonstrate a fictional studio booking app",
+    "audience": "Hackathon demo visitors",
+    "requirements": [
+      "Browse and filter services",
+      "Navigate to a demo booking form"
+    ],
+    "style": [
+      "Clear and readable"
+    ],
+    "unknowns": [
+      "Final visual theme"
+    ]
+  },
+  "uiSpec": {
+    "sessionId": "synthetic-demo-001",
+    "version": 1,
+    "basedOnBriefVersion": 1,
+    "demoDataLabel": "Synthetic demo data. No real bookings.",
+    "screens": [
+      {
+        "id": "services",
+        "title": "Demo services",
+        "components": [
+          {
+            "id": "demo-label",
+            "type": "text",
+            "properties": {
+              "text": "Synthetic demo data. No real bookings."
+            },
+            "actions": []
+          },
+          {
+            "id": "filter-short",
+            "type": "button",
+            "properties": {
+              "label": "Show short sessions"
+            },
+            "actions": [
+              {
+                "type": "setState",
+                "key": "durationFilter",
+                "value": "short"
+              },
+              {
+                "type": "filter",
+                "dataKey": "services",
+                "field": "duration",
+                "stateKey": "durationFilter"
+              }
+            ]
+          },
+          {
+            "id": "services-table",
+            "type": "table",
+            "properties": {
+              "columns": [
+                "name",
+                "duration"
+              ],
+              "dataKey": "services"
+            },
+            "actions": []
+          },
+          {
+            "id": "book",
+            "type": "button",
+            "properties": {
+              "label": "Try a demo booking"
+            },
+            "actions": [
+              {
+                "type": "navigate",
+                "screenId": "booking"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "booking",
+        "title": "Demo booking",
+        "components": [
+          {
+            "id": "booking-form",
+            "type": "form",
+            "properties": {
+              "fields": [
+                {
+                  "id": "displayName",
+                  "label": "Fictional name",
+                  "type": "text",
+                  "required": true
+                }
+              ]
+            },
+            "actions": [
+              {
+                "type": "submitDemoForm",
+                "formId": "booking-form",
+                "resultStateKey": "bookingResult"
+              }
+            ]
+          },
+          {
+            "id": "back",
+            "type": "navigation",
+            "properties": {
+              "items": [
+                {
+                  "label": "Services",
+                  "screenId": "services"
+                }
+              ]
+            },
+            "actions": [
+              {
+                "type": "navigate",
+                "screenId": "services"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "demoData": {
+      "services": [
+        {
+          "id": "demo-service-1",
+          "name": "Fictional portrait session",
+          "duration": "short"
+        },
+        {
+          "id": "demo-service-2",
+          "name": "Fictional studio workshop",
+          "duration": "long"
+        }
+      ]
+    }
+  },
+  "captureStatus": "listening",
+  "buildStatus": "ready"
+}

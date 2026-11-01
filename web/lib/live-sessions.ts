@@ -176,5 +176,3 @@ export function claimInteractiveTest(token:string){
  return `${TEST_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/api${unlimitedUsage()?'':'; Max-Age=900'}${process.env.NODE_ENV==='production'&&process.env.ALIBI_LOCAL_PROFILE!=='true'?'; Secure':''}`;
 }
 export function routeError(error:unknown){return Response.json({error:{code:error instanceof LiveHttpError?error.code:'UNAVAILABLE',message:error instanceof LiveHttpError?error.message:'The request could not be completed.'}},{status:error instanceof LiveHttpError?error.status:503,headers:{'Cache-Control':'no-store'}});}
-
-

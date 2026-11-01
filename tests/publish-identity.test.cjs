@@ -5,13 +5,13 @@ const { harness } = require('./helpers/harness.cjs');
 const enabled = {
   ALIBI_LOCAL_PROFILE: 'true', ALIBI_CONTINUOUS_CAPTURE: 'true',
   LIVE_PROVIDER_CALLS_ENABLED: 'true', TEAM_LIVE_TEST_ENABLED: 'true',
-  FEATHERLESS_API_KEY: 'test-placeholder-key', SPEECHMATICS_API_KEY: 'test-placeholder-key',
+  RENDER_API_KEY: 'test-placeholder-render-key', FEATHERLESS_API_KEY: 'test-placeholder-key', SPEECHMATICS_API_KEY: 'test-placeholder-key',
 };
 const stream = '11111111-1111-4111-8111-111111111111';
 
 async function setup(generatePortfolio = () => new Promise(() => {})) {
   const generation = { generatePortfolio };
-  const h = harness({ './db': { hasDb: () => false }, './generation': generation }, enabled);
+  const h = harness({ './db': { hasDb: () => false }, './workflow-generation': { generateViaWorkflow: (...args) => generation.generatePortfolio(...args) } }, enabled);
   // Keep pure publication/reconciliation helpers real if the integration imports
   // them from the same module; replace only the external generation operation.
   Object.assign(generation, h.load('web/lib/generation.ts'), { generatePortfolio });
@@ -99,3 +99,4 @@ test('wipe removes remembered identity and aliases along with the generated port
   assert.equal(Object.keys(session.portfolio.projects).length, 0);
   assert.equal(await sessions.getPublicPortfolio(session.slug), undefined);
 });
+

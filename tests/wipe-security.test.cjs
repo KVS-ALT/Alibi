@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { harness } = require('./helpers/harness.cjs');
 
-const enabled = { ALIBI_LOCAL_PROFILE: 'true', ALIBI_CONTINUOUS_CAPTURE: 'true', LIVE_PROVIDER_CALLS_ENABLED: 'true', TEAM_LIVE_TEST_ENABLED: 'true', FEATHERLESS_API_KEY: 'test-placeholder-key', SPEECHMATICS_API_KEY: 'test-placeholder-key' };
+const enabled = { ALIBI_LOCAL_PROFILE: 'true', ALIBI_CONTINUOUS_CAPTURE: 'true', LIVE_PROVIDER_CALLS_ENABLED: 'true', TEAM_LIVE_TEST_ENABLED: 'true', RENDER_API_KEY: 'test-placeholder-render-key', FEATHERLESS_API_KEY: 'test-placeholder-key', SPEECHMATICS_API_KEY: 'test-placeholder-key' };
 const ownerRequest = (created, extra = {}) => new Request('http://localhost:3005/api/sessions/' + created.session.id, {
   method: 'DELETE', headers: { cookie: created.cookie.split(';')[0], host: 'localhost:3005', origin: 'http://localhost:3005', ...extra },
 });
@@ -74,8 +74,8 @@ test('a provider result arriving after wipe cannot recreate a database-backed pr
     } else if (sql.startsWith('delete')) writes.push('delete');
     return { rows: [] };
   } };
-  const h = harness({ './db': { hasDb: () => true, db: () => database }, './generation': {
-    async generatePortfolio(input, options) { await options.onDraft(draft); return new Promise(resolve => { completeProvider = resolve; }); },
+  const h = harness({ './db': { hasDb: () => true, db: () => database }, './workflow-generation': {
+    async generateViaWorkflow() { return new Promise(resolve => { completeProvider = resolve; }); },
   } }, enabled);
   const sessions = h.load('web/lib/live-sessions.ts'), created = await create(sessions);
   const request = ownerRequest(created);
@@ -125,3 +125,4 @@ test('three or more speakers reach conversation context and repeated labelled se
   sessions.ingestTranscript(created.session.id, turns[1]);
   assert.equal(created.session.revision, revision, 'same speaker/id/text must not consume another generation revision');
 });
+

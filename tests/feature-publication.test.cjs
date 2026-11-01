@@ -5,14 +5,14 @@ const { harness } = require('./helpers/harness.cjs');
 const enabled = {
   ALIBI_LOCAL_PROFILE: 'true', ALIBI_CONTINUOUS_CAPTURE: 'true',
   LIVE_PROVIDER_CALLS_ENABLED: 'true', TEAM_LIVE_TEST_ENABLED: 'true',
-  FEATHERLESS_API_KEY: 'test-placeholder-key', SPEECHMATICS_API_KEY: 'test-placeholder-key',
+  RENDER_API_KEY: 'test-placeholder-render-key', FEATHERLESS_API_KEY: 'test-placeholder-key', SPEECHMATICS_API_KEY: 'test-placeholder-key',
 };
 const stream = '22222222-2222-4222-8222-222222222222';
 
 async function setup() {
   let finish;
   const generation = { generatePortfolio: () => new Promise(resolve => { finish = resolve; }) };
-  const h = harness({ './db': { hasDb: () => false }, './generation': generation }, enabled);
+  const h = harness({ './db': { hasDb: () => false }, './workflow-generation': { generateViaWorkflow: (...args) => generation.generatePortfolio(...args) } }, enabled);
   Object.assign(generation, h.load('web/lib/generation.ts'), { generatePortfolio: generation.generatePortfolio });
   const sessions = h.load('web/lib/live-sessions.ts');
   const created = await sessions.createLiveSession(new Request('http://localhost:3005/api/sessions', { method: 'POST' }));
@@ -80,3 +80,4 @@ test('questions remain context while a clearly separate product gets a second id
   assert.ok(Object.keys(session.portfolio.projects).includes(originalIds[0]));
   assert.ok(Object.values(session.portfolio.projects).some(project => project.title === 'MeshPilot'));
 });
+

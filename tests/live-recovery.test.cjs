@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { harness } = require('./helpers/harness.cjs');
-const enabled = { ALIBI_LOCAL_PROFILE: 'true', ALIBI_CONTINUOUS_CAPTURE: 'true', LIVE_PROVIDER_CALLS_ENABLED: 'true', TEAM_LIVE_TEST_ENABLED: 'true', FEATHERLESS_API_KEY: 'test-placeholder-key', SPEECHMATICS_API_KEY: 'test-placeholder-key' };
+const enabled = { ALIBI_LOCAL_PROFILE: 'true', ALIBI_CONTINUOUS_CAPTURE: 'true', LIVE_PROVIDER_CALLS_ENABLED: 'true', TEAM_LIVE_TEST_ENABLED: 'true', RENDER_API_KEY: 'test-placeholder-render-key', FEATHERLESS_API_KEY: 'test-placeholder-key', SPEECHMATICS_API_KEY: 'test-placeholder-key' };
 
 test('continuous local capture works without an expiring one-shot test grant', () => {
   const h = harness({}, enabled), sessions = h.load('web/lib/live-sessions.ts');
@@ -81,7 +81,7 @@ test('a slow provider cannot withhold the useful local preview or exceed the gen
 
 test('wipe removes the public result and an in-flight build cannot resurrect it', async () => {
   let finish;
-  const h = harness({ './db': { hasDb: () => false }, './generation': { generatePortfolio: () => new Promise(resolve => { finish = resolve; }) } }, enabled);
+  const h = harness({ './db': { hasDb: () => false }, './workflow-generation': { generateViaWorkflow: () => new Promise(resolve => { finish = resolve; }) } }, enabled);
   const sessions = h.load('web/lib/live-sessions.ts');
   const created = await sessions.createLiveSession(new Request('http://localhost:3005/api/sessions', { method: 'POST' }));
   const request = new Request('http://localhost:3005', { headers: { cookie: created.cookie.split(';')[0] } });
@@ -124,7 +124,7 @@ test('continuous proxy accepts more than 30 seconds and releases upstream on exp
 
 test('new speech during generation preserves the completed preview and queues the newer transcript', async () => {
   let complete;
-  const h = harness({ './db': { hasDb: () => false }, './generation': { generatePortfolio: () => new Promise(resolve => { complete = resolve; }) } }, enabled);
+  const h = harness({ './db': { hasDb: () => false }, './workflow-generation': { generateViaWorkflow: () => new Promise(resolve => { complete = resolve; }) } }, enabled);
   const sessions = h.load('web/lib/live-sessions.ts');
   const { session } = await sessions.createLiveSession(new Request('http://localhost:3005/api/sessions', { method: 'POST' }));
   sessions.authorizeSpeechStart(new Request('http://localhost:3005'), session);
@@ -141,3 +141,4 @@ test('new speech during generation preserves the completed preview and queues th
   assert.equal(session.revision, 2);
   assert.ok(h.timers.size > 0, 'newer words must still be scheduled');
 });
+

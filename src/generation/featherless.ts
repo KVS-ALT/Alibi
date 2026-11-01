@@ -34,7 +34,9 @@ function parseCompletion(body: string): unknown {
   const choice = parsed.data.choices[0];
   if (choice.message.refusal) throw new ProviderFailure('PROVIDER_REFUSED', 'Featherless declined this request.');
   if (choice.finish_reason === 'length') throw new ProviderFailure('PROVIDER_INCOMPLETE', 'Featherless reached the output limit. No automatic retry was sent.', true);
-  if (choice.finish_reason !== 'stop' || !choice.message.content || choice.message.tool_calls) throw new ProviderFailure('INVALID_PROVIDER_RESPONSE', 'Featherless did not return a complete structured plan.');
+  const tools = choice.message.tool_calls;
+  const hasToolCalls = tools != null && (!Array.isArray(tools) || tools.length > 0);
+  if (choice.finish_reason !== 'stop' || !choice.message.content || hasToolCalls) throw new ProviderFailure('INVALID_PROVIDER_RESPONSE', 'Featherless did not return a complete structured plan.');
   try { return JSON.parse(choice.message.content); } catch { throw new ProviderFailure('INVALID_PROVIDER_RESPONSE', 'Featherless did not return a valid JSON plan.'); }
 }
 function seedPlan(spec: UiSpec, brief: Brief) {

@@ -106,4 +106,13 @@ describe('Featherless dedicated bounded inference', () => {
     expect(await provider(transport).generate(input)).toMatchObject({ errorCode: 'INVALID_PROVIDER_REQUEST' });
     expect(transport).not.toHaveBeenCalled();
   });
+
+  it('accepts empty compatibility tool metadata but never accepts a tool call', async () => {
+    for (const toolCalls of [[], null, [{ id: 'unsafe-tool', type: 'function' }]]) {
+      const transport = vi.fn<typeof fetch>().mockImplementation(async (_, init) => new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(context(init).plan), tool_calls: toolCalls } }] })));
+      const result = await provider(transport).generate(request());
+      if (Array.isArray(toolCalls) && toolCalls.length) expect(result).toMatchObject({ errorCode: 'INVALID_PROVIDER_RESPONSE' });
+      else expect(result).toHaveProperty('uiSpec');
+    }
+  });
 });

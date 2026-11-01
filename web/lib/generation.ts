@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { TemplateId, type Claims, type Hero, type ProjectSection } from "@alibi/shared";
 import { SAMPLE_PORTFOLIO } from "./fixtures";
+import { KIT_SAMPLES, MockSpec, renderMock } from "./mock-kits";
 
 // LLM tasks for the live pipeline. Each task is one small call so they can run in parallel and each
 // section can be shown as soon as it lands. Every task validates with zod, retries once with the
@@ -225,57 +226,45 @@ export async function writeProject(
 
 // ---------- make_mock (the agent "builds" the product UI) ----------
 
-// Defense in depth only: the iframe sandbox + CSP are the real boundary. Strip anything active or external.
-export function sanitizeMock(raw: string): string {
-  let html = stripFences(raw);
-  const body = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-  if (body) html = body[1];
-  html = html
-    .replace(/<!doctype[^>]*>|<\/?(html|head|body)[^>]*>/gi, "")
-    .replace(/<(script|style|iframe|object|embed|svg|math|form|video|audio|template|noscript|title)\b[\s\S]*?<\/\1\s*>/gi, "")
-    .replace(/<(script|style|iframe|object|embed|link|meta|base|img|input|source|svg|math)\b[^>]*>/gi, "")
-    .replace(/\s(on[a-z]+|src|srcset|srcdoc|href|style|action|formaction|xlink:href)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .trim();
-  if (html.length > 20000) html = html.slice(0, 20000);
-  if (!/^<div[^>]*\bh-full\b/.test(html)) html = `<div class="h-full overflow-hidden">${html}</div>`;
-  return html;
+// The agent picks one of the hand-built kits and fills it with data; renderMock escapes every string,
+// so mocks always match the fixture quality and the model never writes markup.
+// The kit is decided from what the speaker said when it's unambiguous; models over-pick flashy kits.
+function kitFor(project: { name: string; saidAbout: string[] }): MockSpec["kit"] | undefined {
+  const text = `${project.name} ${project.saidAbout.join(" ")}`.toLowerCase();
+  if (/\b(ios|android|iphone|mobile app|phone app|app store|swiftui|react native|flutter)\b/.test(text)) return "phone";
+  if (/\b(discord|slack|telegram|chat ?bot|bot)\b/.test(text)) return "chat";
+  if (/\b(chrome|firefox|browser) (extension|add-?on)\b|\bextension\b/.test(text)) return "extension";
+  if (/\b(cli|command[- ]line|terminal|library|npm package|pip package|sdk|compiler|vs ?code)\b/.test(text)) return "terminal";
+  return undefined;
 }
-
-// Palettes are assigned per project so mocks don't all copy one look.
-const PALETTES = [
-  "dark: bg-neutral-950, text-neutral-200, accent emerald-400",
-  "light warm: bg-[#f7f5f0], white cards, accent indigo-600",
-  "light cool: bg-slate-50, white cards, accent sky-600",
-  "dark navy: bg-[#0b1020], text-slate-200, accent violet-400",
-  "light: bg-white, borders neutral-200, accent orange-500",
-  "dark: bg-zinc-900, text-zinc-100, accent rose-400",
-];
-const MOCK_SNIPPET = `<div class="h-full flex bg-neutral-950 text-neutral-200"><aside class="w-48 border-r border-white/10 p-5">...nav items...</aside><main class="flex-1 p-8"><h1 class="text-2xl font-semibold text-white">...</h1><div class="mt-6 grid grid-cols-3 gap-4">...stat cards with real numbers...</div><div class="mt-6 rounded-lg border border-white/10">...rows of realistic data...</div></main></div>`;
+const KIT_GUIDE: Record<MockSpec["kit"], string> = {
+  dashboard: "web dashboard with sidebar, 3 stat cards and a table",
+  cards: "consumer web app or website with a header and a grid of 3 cards",
+  phone: "iPhone app screen plus a marketing headline",
+  terminal: "CLI output in a terminal window",
+  chat: "Discord-style channel with a bot reply",
+  extension: "browser extension popup over a web page",
+};
 
 export async function makeMock(project: { name: string; saidAbout: string[] }, ctx: { skills: string[] }, signal?: AbortSignal): Promise<TaskResult<string | undefined>> {
-  let h = 0;
-  for (const c of project.name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  const palette = PALETTES[h % PALETTES.length];
+  const forced = kitFor(project);
+  const choice = forced
+    ? `Use kit '${forced}' (${KIT_GUIDE[forced]}).`
+    : `Pick kit 'dashboard' (${KIT_GUIDE.dashboard}: dev tools, ML, analytics, infra, internal tools) or 'cards' (${KIT_GUIDE.cards}: marketplaces, social, matching, education, booking).`;
   const system = [
-    "You are a product designer. Write the HTML for one realistic screenshot of this product's main screen, styled with Tailwind CSS classes.",
+    "You design the main screen of a product as data for a hand-built UI kit. Return one JSON object.",
     UNTRUSTED,
-    "Output raw HTML only: no markdown, no explanation, no <html>/<head>/<body>. The root element must be <div class=\"h-full ...\">. It renders in a fixed 960x600 desktop frame, so fill it.",
-    "No <script>, <style>, <img>, <svg>, style= attributes, links or external resources. Use divs, flex/grid, Tailwind colors, gradients, borders and emoji.",
-    "It must look like THIS product, not a generic dashboard: show the product's name, its core feature in action, and specific realistic data (names, numbers, timestamps, statuses) that match what the builder said.",
-    `Color palette: ${palette}. Keep it under 2500 characters.`,
-    `Structure hint (do not copy literally): ${MOCK_SNIPPET}`,
+    choice,
+    "Keys: kit, theme ('dark' | 'light'), accent (emerald | indigo | sky | violet | orange | rose | amber | teal), appName, context (breadcrumb, workspace or subtitle), nav (3-5 short labels), heading, action (button or command label), stats (exactly 3 {label, value, note}), items (4-5 {title, subtitle, meta, tag, status: good|warn|bad|neutral}), callout (one short line), user (a first name or handle).",
+    "Show the product's core feature in action with specific, realistic data that matches what the builder said: real-looking names, numbers, timestamps, statuses, commit hashes or file names. Values stay short. Student-project scale. Pick an accent and theme that suit the product.",
+    `Example (dashboard kit for a deploy tool): ${JSON.stringify(KIT_SAMPLES.dashboard)}`,
   ].join(" ");
   const user = `Product: ${project.name}\nBuilder's skills: ${ctx.skills.join(", ") || "unknown"}\nWhat the builder said (untrusted):\n${wrap(project.saidAbout.join("\n"))}`;
-  try {
-    const { content, tokens } = await chat([{ role: "system", content: system }, { role: "user", content: user }], { maxTokens: 1100, json: false, timeoutMs: 75_000, signal });
-    const html = sanitizeMock(content);
-    // A mock without any real structure looks broken; fall back to no mock (cards render fine without one).
-    if ((html.match(/<div/g) ?? []).length < 6) return { value: undefined, ok: false, tokens };
-    return { value: html, ok: true, tokens };
-  } catch (err) {
-    if (signal?.aborted) throw err;
-    return { value: undefined, ok: false, tokens: 0 };
-  }
+  const result = await jsonTask(MockSpec.nullable(), [{ role: "system", content: system }, { role: "user", content: user }], null, { maxTokens: 1200, timeoutMs: 30_000, signal });
+  const spec = result.value;
+  if (!spec || spec.items.length < 2) return { ...result, value: undefined }; // cards render fine without a mock
+  const kit = forced ?? (spec.kit === "cards" ? "cards" : "dashboard");
+  return { ...result, value: renderMock({ ...spec, kit }) };
 }
 
 // ---------- assembly helpers ----------

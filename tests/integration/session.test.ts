@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { acceptGeneration, addSegment, beginBuild, createSession, reconcilePreviewState, transcriptText } from '../../src/integration/session';
 import type { UiSpec } from '../../src/contracts';
-const spec = (sessionId: string, version = 1): UiSpec => ({sessionId, version, basedOnBriefVersion:version, templateId:'demo',templateVersion:1,screens:[{id:'home',title:'Demo',components:[{id:'contact',type:'form',properties:{fields:[{id:'email',label:'Email',type:'email',required:true}]},actions:[]}]}],demoData:{},demoDataLabel:'Demo data'});
+const spec = (sessionId: string, version = 1): UiSpec => ({sessionId, version, basedOnBriefVersion:version, templateId:'studio-booking',templateVersion:1,screens:[{id:'home',title:'Demo',components:[{id:'contact',type:'form',properties:{fields:[{id:'email',label:'Email',type:'email',required:true}]},actions:[]}]}],demoData:{},demoDataLabel:'Demo data'});
 describe('session lifecycle integration', () => {
  it('deduplicates interim segments and isolates foreign sessions', () => {
   const a=createSession(), b=createSession();
@@ -38,3 +38,4 @@ describe('session lifecycle integration', () => {
   expect(reconcilePreviewState(state,next,old).forms.contact.email).toBe('');
  });
 });
+

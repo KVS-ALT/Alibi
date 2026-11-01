@@ -10,6 +10,8 @@ export interface ProxySocket {
 }
 export interface SpeechProxyConfig {
   enabled?: boolean; liveCallsAllowed?: boolean;
+  /** Explicit server opt-in: capture ends on user End/disconnect, not a test allowance. */
+  continuousCapture?: boolean;
   maxSessionAudioSeconds?: number; maxGlobalAudioSeconds?: number; maxWallMs?: number;
   maxStreams?: number; maxStartsPerSession?: number; maxStartsGlobal?: number;
 }
@@ -41,12 +43,13 @@ const positive = (value: number | undefined) => typeof value === 'number' && Num
 export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependencies?: SpeechProxyDependencies) {
   const sessions = new Map<string, Session>();
   const byteCap = (seconds: number | undefined) => { const bytes = Math.floor(positive(seconds) * 32000); return Number.isSafeInteger(bytes) ? bytes : 0; };
-  const sessionCap = byteCap(config.maxSessionAudioSeconds);
-  const globalCap = byteCap(config.maxGlobalAudioSeconds);
-  const wallMs = Math.min(Math.floor(positive(config.maxWallMs)), 2_147_483_647);
+  const continuous = config.continuousCapture === true;
+  const sessionCap = continuous ? Infinity : byteCap(config.maxSessionAudioSeconds);
+  const globalCap = continuous ? Infinity : byteCap(config.maxGlobalAudioSeconds);
+  const wallMs = continuous ? Infinity : Math.min(Math.floor(positive(config.maxWallMs)), 2_147_483_647);
   const maxStreams = Math.min(Math.floor(positive(config.maxStreams) || 1), 10);
-  const maxStarts = Math.min(Math.floor(positive(config.maxStartsPerSession) || 2), 10);
-  const globalStartsCap = config.maxStartsGlobal === undefined ? 1 : Math.min(Math.floor(positive(config.maxStartsGlobal)), 100);
+  const maxStarts = continuous ? Infinity : Math.min(Math.floor(positive(config.maxStartsPerSession) || 2), 10);
+  const globalStartsCap = continuous ? Infinity : config.maxStartsGlobal === undefined ? 1 : Math.min(Math.floor(positive(config.maxStartsGlobal)), 100);
   let globalBytes = 0, globalStarts = 0, disposed = false;
   const isConfigured = () => !disposed && config.enabled === true && config.liveCallsAllowed === true && sessionCap > 0 && globalCap > 0 && globalStartsCap > 0 && wallMs > 0 && !!dependencies?.tokenProvider && !!dependencies.createSocket;
   function emit(stream: Stream, event: Omit<Extract<SpeechProxyEvent, { type: 'segment' }>, 'id'> | Omit<Extract<SpeechProxyEvent, { type: 'state' }>, 'id'>) {
@@ -93,7 +96,7 @@ export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependen
       listeners: new Set(), buffer: [], eventIndex: 0, segmentIndex: 0, pendingSegment: '', finals: new Set(), sent: 0, acknowledged: 0, bytes: 0, outstanding: [] };
     session.stream = stream;
     const cancel = () => finish(stream, 'cancelled'); input.signal?.addEventListener('abort', cancel, { once: true });
-    stream.deadline = setTimeout(() => finish(stream, 'wall_limit'), wallMs);
+    if (!continuous) stream.deadline = setTimeout(() => finish(stream, 'wall_limit'), wallMs);
     stream.handshake = setTimeout(() => finish(stream, 'connection_timeout'), Math.min(15000, wallMs));
     void (async () => {
       try {
@@ -125,7 +128,7 @@ export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependen
               if (isFinal && stream.finals.has(key)) return;
               if (!stream.pendingSegment) stream.pendingSegment = `${stream.sessionId}:speechmatics:${stream.id}:${++stream.segmentIndex}`;
               const segment = { sessionId: stream.sessionId, segmentId: stream.pendingSegment, text: text.trim(), isFinal };
-              if (isFinal) { stream.finals.add(key); stream.pendingSegment = ''; if (stream.finals.size > 10000) { finish(stream, 'transcript_limit'); return; } }
+              if (isFinal) { stream.finals.add(key); stream.pendingSegment = ''; if (stream.finals.size > 10000) { if (continuous) stream.finals.delete(stream.finals.values().next().value!); else { finish(stream, 'transcript_limit'); return; } } }
               if (segment.text) {
                 if (segment.isFinal) dependencies?.onSegment?.(segment);
                 emit(stream, { type: 'segment', segment });

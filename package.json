@@ -6,6 +6,7 @@
     "web"
   ],
   "scripts": {
+    "test": "node --test tests/*.test.cjs",
     "dev:web": "npm run dev -w web",
     "build:web": "npm run build -w web",
     "start:web": "npm run start -w web",

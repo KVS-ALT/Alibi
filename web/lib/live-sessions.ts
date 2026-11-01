@@ -40,20 +40,22 @@ function expiry(){return Date.parse(process.env.INTERACTIVE_TEST_EXPIRES_AT??'')
 function grantConfigured(){return /^[a-f0-9]{64}$/.test(process.env.INTERACTIVE_TEST_TOKEN_SHA256??'')&&Number.isFinite(expiry())&&expiry()>Date.now();}
 function grantTokenValid(token:string){return grantConfigured()&&/^[a-f0-9]{64}$/.test(token)&&timingSafeEqual(hash(token),Buffer.from(process.env.INTERACTIVE_TEST_TOKEN_SHA256!,'hex'));}
 function limit(name:string,max:number){const value=Number(process.env[name]??0);return Number.isSafeInteger(value)&&value>0?Math.min(value,max):0;}
+function continuousCapture(){return process.env.ALIBI_LOCAL_PROFILE==='true'&&process.env.ALIBI_CONTINUOUS_CAPTURE==='true';}
 export function getLiveRuntime(){
- const liveEnabled=process.env.LIVE_PROVIDER_CALLS_ENABLED==='true'&&process.env.TEAM_LIVE_TEST_ENABLED==='true'&&grantConfigured();
- const audio=liveEnabled?limit('APPROVED_AUDIO_SECONDS',30):0;
- return {liveEnabled,speechKey:process.env.SPEECHMATICS_API_KEY||undefined,
-  limits:{maxSessionAudioSeconds:audio,maxGlobalAudioSeconds:audio,maxWallMs:audio>0?40000:0,maxStreams:1,maxStartsGlobal:liveEnabled?limit('APPROVED_SPEECH_TOKENS',1):0},
+ const continuous=continuousCapture();
+ const liveEnabled=process.env.LIVE_PROVIDER_CALLS_ENABLED==='true'&&process.env.TEAM_LIVE_TEST_ENABLED==='true'&&(continuous||grantConfigured());
+ const audio=liveEnabled?continuous?Infinity:limit('APPROVED_AUDIO_SECONDS',30):0;
+ return {liveEnabled,continuousCapture:continuous,speechKey:process.env.SPEECHMATICS_API_KEY||undefined,
+  limits:{continuousCapture:continuous,maxSessionAudioSeconds:audio,maxGlobalAudioSeconds:audio,maxWallMs:audio>0?40000:0,maxStreams:1,maxStartsGlobal:liveEnabled?continuous?Infinity:limit('APPROVED_SPEECH_TOKENS',1):0},
   speechFetch:liveEnabled?async(input:Parameters<typeof fetch>[0],init?:RequestInit)=>{
    const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);
-   if(url.href!=='https://mp.speechmatics.com/v1/api_keys?type=rt'||state.tokenAttempts>=limit('APPROVED_SPEECH_TOKENS',1)||!grantConfigured())throw new Error('Approved speech allowance unavailable.');
+   if(url.href!=='https://mp.speechmatics.com/v1/api_keys?type=rt'||!continuous&&(state.tokenAttempts>=limit('APPROVED_SPEECH_TOKENS',1)||!grantConfigured()))throw new Error('Approved speech allowance unavailable.');
    state.tokenAttempts++;return fetch(input,{...init,redirect:'error'});
   }:undefined,
  };
 }
 export function providerMetadata(){const runtime=getLiveRuntime();return {
- generation:{provider:'featherless',configured:!!process.env.FEATHERLESS_API_KEY?.trim(),enabled:runtime.liveEnabled&&limit('APPROVED_GENERATION_REQUESTS',3)>0},
+ generation:{provider:'featherless',configured:!!process.env.FEATHERLESS_API_KEY?.trim(),enabled:runtime.liveEnabled&&(runtime.continuousCapture||limit('APPROVED_GENERATION_REQUESTS',3)>0)},
  speech:{provider:'speechmatics',transport:'proxy',configured:!!process.env.SPEECHMATICS_API_KEY?.trim(),enabled:runtime.liveEnabled&&runtime.limits.maxStartsGlobal>0&&runtime.limits.maxSessionAudioSeconds>0},
 };}
 export function storageMode(){return hasDb()?'postgres':'memory';}
@@ -65,21 +67,21 @@ async function save(session:LiveSession){
 }
 export async function createLiveSession(request:Request){
  assertOrigin(request);
- for(const[id,session]of state.sessions)if(Date.now()-session.updatedAt>30*60*1000&&!session.building){if(session.timer)clearTimeout(session.timer);state.sessions.delete(id);}
+ for(const[id,session]of state.sessions)if(Date.now()-session.updatedAt>30*60*1000&&!session.building&&!session.active){if(session.timer)clearTimeout(session.timer);state.sessions.delete(id);}
  if(state.sessions.size>=100)throw new LiveHttpError(503,'CAPACITY','Session capacity reached.');
  let owner=cookie(request,OWNER_COOKIE);if(!/^[a-f0-9]{64}$/.test(owner))owner=randomBytes(32).toString('hex');
  const session:LiveSession={id:randomUUID(),slug:randomBytes(18).toString('hex'),owner,status:'idle',portfolio:{...EMPTY,skills:[],projects:{},contradictions:[]},version:0,active:false,createdAt:Date.now(),updatedAt:Date.now(),segments:new Map(),revision:0,acceptedRevision:0,building:false};
  await save(session);state.sessions.set(session.id,session);
- return {session,cookie:`${OWNER_COOKIE}=${owner}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=1800${process.env.NODE_ENV==='production'&&process.env.ALIBI_LOCAL_PROFILE!=='true'?'; Secure':''}`};
+ return {session,cookie:`${OWNER_COOKIE}=${owner}; HttpOnly; SameSite=Strict; Path=/api${continuousCapture()?'':'; Max-Age=1800'}${process.env.NODE_ENV==='production'&&process.env.ALIBI_LOCAL_PROFILE!=='true'?'; Secure':''}`};
 }
 export async function requireOwnedSession(request:Request,id:string){
  assertOrigin(request);
  const session=state.sessions.get(id);if(!session||!equal(session.owner,cookie(request,OWNER_COOKIE)))throw new LiveHttpError(404,'NOT_FOUND','Session not found or expired.');return session;
 }
-function grantAllows(session:LiveSession){const grant=state.grant;return getLiveRuntime().liveEnabled&&!!grant&&grant.owner===session.owner&&grant.sessionId===session.id&&Date.now()-grant.startedAt<90000;}
+function grantAllows(session:LiveSession){const grant=state.grant;return getLiveRuntime().liveEnabled&&(continuousCapture()||!!grant&&grant.owner===session.owner&&grant.sessionId===session.id&&Date.now()-grant.startedAt<90000);}
 export function authorizeSpeechStart(request:Request,session:LiveSession){
  if(!getLiveRuntime().liveEnabled)throw new LiveHttpError(503,'LIVE_DISABLED','The protected live session has not been enabled.');
- if(state.grant||!grantTokenValid(cookie(request,TEST_COOKIE)))throw new LiveHttpError(403,'TEST_GRANT_REQUIRED','Use the approved private test link; this one-session allowance may already be used.');
+ if(!continuousCapture()&&(state.grant||!grantTokenValid(cookie(request,TEST_COOKIE))))throw new LiveHttpError(403,'TEST_GRANT_REQUIRED','Use the approved private test link; this one-session allowance may already be used.');
  state.grant={owner:session.owner,sessionId:session.id,startedAt:Date.now()};session.active=true;session.status='listening';session.updatedAt=Date.now();
 }
 export function setSpeechState(id:string,status:'listening'|'idle'){
@@ -92,24 +94,27 @@ export function conversation(session:LiveSession){return [...session.segments.va
 export function ingestTranscript(id:string,segment:{id:string;text:string;isFinal:boolean}){
  const session=state.sessions.get(id);if(!session||!segment.isFinal||!grantAllows(session)||typeof segment.text!=='string'||!segment.text.trim()||segment.text.length>4000)return;
  if(session.segments.has(segment.id)&&session.segments.get(segment.id)===segment.text.trim())return;
- if(!session.segments.has(segment.id)&&session.segments.size>=128)return;
- session.segments.set(segment.id,segment.text.trim());if(conversation(session).length>12000){session.segments.delete(segment.id);session.error='Conversation length allowance reached.';return;}
+ if(!session.segments.has(segment.id)&&session.segments.size>=128){if(continuousCapture())session.segments.delete(session.segments.keys().next().value!);else return;}
+ session.segments.set(segment.id,segment.text.trim());
+ if(continuousCapture()){while(session.segments.size>1&&conversation(session).length>12000)session.segments.delete(session.segments.keys().next().value!);}
+ else if(conversation(session).length>12000){session.segments.delete(segment.id);session.error='Conversation length allowance reached.';return;}
  session.revision++;session.updatedAt=Date.now();session.firstDirtyAt??=Date.now();
  if(session.timer)clearTimeout(session.timer);session.timer=setTimeout(()=>void build(session),Math.min(1500,Math.max(0,6000-(Date.now()-session.firstDirtyAt))));
 }
 async function build(session:LiveSession){
  if(session.building||session.revision<=session.acceptedRevision||!grantAllows(session))return;
- if(state.generationAttempts>=limit('APPROVED_GENERATION_REQUESTS',3)){session.error='The approved inference allowance has been reached. Your last completed portfolio is preserved.';session.status='error';return;}
+ if(!continuousCapture()&&state.generationAttempts>=limit('APPROVED_GENERATION_REQUESTS',3)){session.error='The approved inference allowance has been reached. Your last completed portfolio is preserved.';session.status='error';return;}
  session.firstDirtyAt=undefined;const revision=session.revision,transcript=conversation(session),key=process.env.FEATHERLESS_API_KEY;
  if(!key){session.error='Featherless credentials are not configured.';session.status='error';return;}
  session.building=true;session.status='building';session.error=undefined;session.abort=new AbortController();
  try {
-  const result=await generatePortfolio({transcript,previous:session.version?session.portfolio:undefined,signal:session.abort.signal},{apiKey:key,model:process.env.FEATHERLESS_MODEL||'Qwen/Qwen2.5-7B-Instruct',fetcher:async(input,init)=>{
+  const result=await generatePortfolio({transcript,previous:session.version?session.portfolio:undefined,signal:session.abort.signal},{apiKey:key,model:process.env.FEATHERLESS_MODEL||'Qwen/Qwen2.5-7B-Instruct',onDiagnostic:event=>console.info('[alibi:generation]',JSON.stringify({revision,...event})),fetcher:async(input,init)=>{
    const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);
-   if(url.href!=='https://api.featherless.ai/v1/chat/completions'||!grantAllows(session)||state.generationAttempts>=limit('APPROVED_GENERATION_REQUESTS',3))throw new Error('Approved inference allowance reached.');
+   if(url.href!=='https://api.featherless.ai/v1/chat/completions'||!grantAllows(session)||!continuousCapture()&&state.generationAttempts>=limit('APPROVED_GENERATION_REQUESTS',3))throw new Error('Approved inference allowance reached.');
    state.generationAttempts++;return fetch(input,{...init,redirect:'error'});
   }});
-  if(revision!==session.revision)return;
+  // One build runs per session. Publish this completed snapshot, then catch up
+  // with queued words; continuous speech must not discard every completed build.
   const portfolio=Portfolio.parse(result.portfolio),claims=Claims.parse(result.claims);
   const prior={portfolio:session.portfolio,claims:session.claims,version:session.version};
   session.portfolio=portfolio;session.claims=claims;session.version++;session.updatedAt=Date.now();

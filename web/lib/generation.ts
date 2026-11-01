@@ -11,6 +11,8 @@ export interface GenerationOptions {
   model: string;
   /** Must be an explicitly enabled, quota-enforcing server transport. No global fetch fallback. */
   fetcher?: typeof fetch;
+  /** Safe metadata only: never transcript, model response, or credentials. */
+  onDiagnostic?(event: { outcome: 'model' | 'fallback'; reason?: string; status?: number }): void;
 }
 export interface GenerationOutput { portfolio: Portfolio; claims: Claims }
 
@@ -24,6 +26,9 @@ const RESERVED = new Set(["__proto__", "prototype", ...Object.getOwnPropertyName
 const text = (value: string, maximum: number) => value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, " ").trim().slice(0, maximum);
 const encoded = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
 class InvalidModelOutput extends Error {}
+class ProviderFailure extends Error {
+  constructor(public reason: string, public status?: number) { super(reason); }
+}
 
 function projectId(name: string, used: Set<string>) {
   let id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 56) || "project";
@@ -166,7 +171,7 @@ async function requestOnce(payload: string, options: GenerationOptions, signal?:
       body: payload,
     }), aborted]);
     const body = await Promise.race([readResponse(response), aborted]);
-    if (!response.ok) throw new Error("Provider request unavailable");
+    if (!response.ok) throw new ProviderFailure('provider_http', response.status);
     let envelope: { choices?: { finish_reason?: string; message?: { role?: string; content?: string; tool_calls?: unknown } }[] };
     try { envelope = JSON.parse(body); } catch { throw new InvalidModelOutput("Response must be a JSON object."); }
     const choice = envelope.choices?.[0], tools = choice?.message?.tool_calls;
@@ -185,8 +190,9 @@ async function requestOnce(payload: string, options: GenerationOptions, signal?:
 export async function generatePortfolio(input: GenerationInput, options: GenerationOptions): Promise<GenerationOutput> {
   input.signal?.throwIfAborted();
   const transcript = text(String(input.transcript ?? ""), 12000).split(options.apiKey || "\u0000").join("[redacted]");
-  const fallback = () => safeDefaults(transcript, input.previous);
-  if (typeof window !== "undefined" || !options.fetcher || options.model !== MODEL || !/^[^\s\u0000-\u001f]{8,512}$/.test(options.apiKey)) return fallback();
+  const report = (event: Parameters<NonNullable<GenerationOptions['onDiagnostic']>>[0]) => { try { options.onDiagnostic?.(event); } catch {} };
+  const fallback = (reason: string, status?: number) => { report({ outcome: 'fallback', reason, ...(status !== undefined ? { status } : {}) }); return safeDefaults(transcript, input.previous); };
+  if (typeof window !== "undefined" || !options.fetcher || options.model !== MODEL || !/^[^\s\u0000-\u001f]{8,512}$/.test(options.apiKey)) return fallback('not_configured');
   const previous = Portfolio.safeParse(input.previous);
   const previousContext = previous.success ? {
     templateId: previous.data.templateId, hero: previous.data.hero, skills: previous.data.skills,
@@ -213,19 +219,23 @@ export async function generatePortfolio(input: GenerationInput, options: Generat
   for (let attempt = 0; attempt < 2; attempt++) {
     input.signal?.throwIfAborted();
     const payload = JSON.stringify({ model: MODEL, max_tokens: MAX_OUTPUT_TOKENS, temperature: 0.1, stream: false, response_format: { type: "json_object" }, messages });
-    if (new TextEncoder().encode(payload).byteLength > MAX_REQUEST_BYTES) return fallback();
+    if (new TextEncoder().encode(payload).byteLength > MAX_REQUEST_BYTES) return fallback('request_size');
     try {
       const result = validateOutput(await requestOnce(payload, options, input.signal), transcript);
       input.signal?.throwIfAborted();
+      report({ outcome: 'model' });
       return result;
     } catch (error) {
       if (input.signal?.aborted) throw new DOMException("Generation aborted", "AbortError");
       // Only a validation correction can consume a second request. The injected
       // transport must enforce the approved total HTTP quota before sending.
-      if (!(error instanceof InvalidModelOutput) || attempt > 0) return fallback();
+      if (!(error instanceof InvalidModelOutput) || attempt > 0) return fallback(
+        error instanceof ProviderFailure ? error.reason : error instanceof InvalidModelOutput ? 'invalid_output' : error instanceof DOMException && error.name === 'AbortError' ? 'provider_timeout' : 'provider_network_or_response',
+        error instanceof ProviderFailure ? error.status : undefined,
+      );
       messages.push({ role: "user", content: "The response failed validation: " + text(error.message, 500) + " Return a corrected complete claims/portfolio JSON object. Do not include markdown." });
     }
   }
-  return fallback();
+  return fallback('invalid_output');
 }
 

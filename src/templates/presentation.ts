@@ -18,7 +18,7 @@ const visualCopy: Record<string, [string,string,string]> = {
   ],
   "portfolio": [
     "Thoughtful work for a changing world.",
-    "Independent designer working at the intersection of identity, digital experiences, and everyday life.",
+    "A concept for presenting your work, your interests, and the projects you choose to share.",
     "View selected work"
   ],
   "marketplace": [

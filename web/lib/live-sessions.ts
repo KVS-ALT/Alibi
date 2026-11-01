@@ -2,9 +2,9 @@ import 'server-only';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Claims, Portfolio, type Claims as ClaimsData, type Portfolio as PortfolioData } from '@alibi/shared';
 import { db, hasDb } from './db';
-import { generatePortfolio } from './generation';
+import { DEFAULT_GENERATION_MODEL, generatePortfolio } from './generation';
 import { applyConversationFacts } from './portfolio-facts';
-import { createDraftPortfolio } from './draft';
+import { createDraftPortfolio, renderProjectMock } from './draft';
 import { updateConversationIdentity, type ConversationIdentity } from './conversation-identity';
 import type { ProjectIdentityRegistry } from './project-identity';
 
@@ -61,7 +61,7 @@ export function getLiveRuntime(){
  };
 }
 export function providerMetadata(){const runtime=getLiveRuntime();return {
- generation:{provider:'featherless',configured:!!process.env.FEATHERLESS_API_KEY?.trim(),enabled:runtime.liveEnabled&&(runtime.continuousCapture||limit('APPROVED_GENERATION_REQUESTS',3)>0)},
+ generation:{provider:'featherless',model:process.env.FEATHERLESS_MODEL||DEFAULT_GENERATION_MODEL,configured:!!process.env.FEATHERLESS_API_KEY?.trim(),enabled:runtime.liveEnabled&&(runtime.continuousCapture||limit('APPROVED_GENERATION_REQUESTS',3)>0)},
  speech:{provider:'speechmatics',transport:'proxy',configured:!!process.env.SPEECHMATICS_API_KEY?.trim(),enabled:runtime.liveEnabled&&runtime.limits.maxStartsGlobal>0&&runtime.limits.maxSessionAudioSeconds>0},
 };}
 export function storageMode(){return hasDb()?'postgres':'memory';}
@@ -127,6 +127,7 @@ export function ingestTranscript(id:string,segment:{id:string;text:string;isFina
  try{
   const draft=createDraftPortfolio(conversation(session),session.portfolio,{projectRegistry:session.projectRegistry,builderName:session.identity.name,builderSpeaker:session.identity.builderSpeaker});
   session.projectRegistry=draft.projectRegistry;
+  for(const entry of session.projectRegistry.projects){entry.designKey??=session.id+':'+entry.id;const project=draft.portfolio.projects[entry.id];if(project)project.mockHtml=renderProjectMock(project,entry.designKey);}
   if(JSON.stringify(draft.portfolio)!==JSON.stringify(session.portfolio)){session.portfolio=draft.portfolio;session.claims=draft.claims;session.version++;session.updatedAt=Date.now();void save(session).catch(()=>{if(!session.deleted)session.error='Portfolio persistence failed.';});}
  }catch{console.info('[alibi:understanding] draft_update_failed');}
  session.revision++;session.updatedAt=Date.now();session.firstDirtyAt??=Date.now();
@@ -148,7 +149,7 @@ async function build(session:LiveSession){
   try{await save(session);}catch(error){if(!session.deleted)Object.assign(session,prior);throw error;}
  };
  try {
-  const result=await generatePortfolio({transcript,previous:session.version?session.portfolio:undefined,signal:session.abort.signal,identity:structuredClone(session.identity),projectRegistry:structuredClone(session.projectRegistry)},{apiKey:key,model:process.env.FEATHERLESS_MODEL||'Qwen/Qwen2.5-7B-Instruct',onDraft:publish,onDiagnostic:event=>console.info('[alibi:generation]',JSON.stringify({revision,...event})),fetcher:async(input,init)=>{
+  const result=await generatePortfolio({transcript,previous:session.version?session.portfolio:undefined,signal:session.abort.signal,identity:structuredClone(session.identity),projectRegistry:structuredClone(session.projectRegistry)},{apiKey:key,model:process.env.FEATHERLESS_MODEL||DEFAULT_GENERATION_MODEL,onDraft:publish,onDiagnostic:event=>console.info('[alibi:generation]',JSON.stringify({revision,...event})),fetcher:async(input,init)=>{
    const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);
    if(url.href!=='https://api.featherless.ai/v1/chat/completions'||!grantAllows(session)||!continuousCapture()&&state.generationAttempts>=limit('APPROVED_GENERATION_REQUESTS',3))throw new Error('Approved inference allowance reached.');
    state.generationAttempts++;return fetch(input,{...init,redirect:'error'});

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import type { ProjectSection } from '@alibi/shared';
+import { renderDesignedProject } from '@/lib/mock-designs';
 
 // Shared building blocks for all three templates. Styling is passed in so each template keeps its own look.
 
@@ -48,7 +50,7 @@ export function CommitGraph({ data, colors }: { data: number[]; colors: [string,
   const weeks: number[][] = [];
   for (let i = 0; i < data.length; i += 7) weeks.push(data.slice(i, i + 7));
   return (
-    <div className="flex gap-[3px]" aria-label={`${data.reduce((a, b) => a + b, 0)} commits`}>
+    <div className="flex gap-[3px]" role="img" aria-label={`${data.reduce((a, b) => a + b, 0)} commits`}>
       {weeks.map((week, w) => (
         <div key={w} className="flex flex-col gap-[3px]">
           {week.map((n, d) => (
@@ -60,25 +62,21 @@ export function CommitGraph({ data, colors }: { data: number[]; colors: [string,
   );
 }
 
-// Agent-written mock UI. It is untrusted HTML, so it runs in a sandboxed iframe with no same-origin access,
-// a CSP that only allows the pinned Tailwind build, and no network for images. Rendered at a fixed
-// "desktop" size and scaled down so it reads like a screenshot.
+// Static project previews have no scripts, external assets, or same-origin access.
+// Trusted local renderers supply their own CSS, so preview rendering never waits on a CDN.
 const MOCK_W = 960;
 const MOCK_H = 600;
-const TAILWIND = "https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.18/dist/index.global.js";
 
 function srcDoc(html: string) {
   return `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${TAILWIND}; style-src 'unsafe-inline'; img-src data:">
-<script src="${TAILWIND}"></script>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <style>html,body{margin:0;width:${MOCK_W}px;height:${MOCK_H}px;overflow:hidden;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}</style>
 </head><body>${html}</body></html>`;
 }
 
-export function MockFrame({ html, url, dark = false }: { html: string; url?: string; dark?: boolean }) {
+export function MockFrame({ html, title = "Project preview", dark = false }: { html: string; title?: string; dark?: boolean }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0);
-  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     const el = boxRef.current;
@@ -96,26 +94,18 @@ export function MockFrame({ html, url, dark = false }: { html: string; url?: str
         <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
         <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
         <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-        {url && (
-          <span
-            className={`ml-3 truncate rounded-md px-2 py-0.5 font-mono text-[10px] ${dark ? "bg-white/5 text-white/50" : "bg-black/5 text-black/60"}`}
-          >
-            {url}
-          </span>
-        )}
+        <span className={`ml-3 truncate font-mono text-xs ${dark ? "text-neutral-300" : "text-neutral-600"}`}>{title}</span>
       </div>
       <div ref={boxRef} className="relative w-full" style={{ aspectRatio: `${MOCK_W} / ${MOCK_H}` }}>
-        {!loaded && <div className={`absolute inset-0 animate-pulse ${dark ? "bg-white/5" : "bg-black/5"}`} />}
         {scale > 0 && (
           <iframe
-            title={url ?? "project preview"}
-            sandbox="allow-scripts"
+            title={`${title} project preview`}
+            sandbox=""
             srcDoc={srcDoc(html)}
-            loading="lazy"
-            onLoad={() => setLoaded(true)}
+            loading="eager"
             tabIndex={-1}
-            className="pointer-events-none absolute left-0 top-0 origin-top-left border-0 transition-opacity duration-500"
-            style={{ width: MOCK_W, height: MOCK_H, transform: `scale(${scale})`, opacity: loaded ? 1 : 0 }}
+            className="pointer-events-none absolute left-0 top-0 origin-top-left border-0"
+            style={{ width: MOCK_W, height: MOCK_H, transform: `scale(${scale})` }}
           />
         )}
       </div>
@@ -133,8 +123,16 @@ export function Expand({ open, children }: { open: boolean; children: React.Reac
   );
 }
 
-export function slugUrl(title: string) {
-  return title.toLowerCase().replace(/[^a-z0-9]+/g, "") + ".app";
+export function portfolioTitle(name?: string) {
+  const value=name?.trim();
+  if(!value || /^your\s*portfolio$/i.test(value))return "Your portfolio";
+  return `${value}${/s$/i.test(value) ? "’" : "’s"} portfolio`;
+}
+
+export function projectPreviewHtml(project: ProjectSection) {
+  return project.mockHtml && /\bdata-mock-design\s*=/.test(project.mockHtml)
+    ? project.mockHtml
+    : renderDesignedProject(project);
 }
 
 // Short deterministic "commit hash" so a project always shows the same one.
@@ -202,6 +200,17 @@ export function ProjectDetails({
       {mock}
       <p className="leading-relaxed">{p.summary}</p>
 
+      {p.details && p.details.length > 0 && (
+        <dl className={`divide-y rounded-lg border px-4 ${t.border}`}>
+          {p.details.map((detail,index)=>(
+            <div key={`${detail.label}:${index}`} className="grid gap-1 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:gap-4">
+              <dt className={`text-xs ${t.muted}`}>{detail.label}</dt>
+              <dd className="min-w-0 break-words text-sm leading-relaxed">{detail.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
       {p.metrics.length > 0 && (
         <dl className="grid grid-cols-3 gap-2">
           {p.metrics.map((m) => (
@@ -252,12 +261,6 @@ export function ProjectDetails({
             <CommitGraph data={p.commitGraph} colors={t.graph} />
           </div>
           <div className={`mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs ${t.muted}`}>
-            {p.repo && (
-              <span className="flex items-center gap-1.5 font-mono">
-                {Icon.github}
-                {p.repo}
-              </span>
-            )}
             {p.commits !== undefined && <span>{p.commits} commits</span>}
             {p.stars !== undefined && (
               <span className="flex items-center gap-1">

@@ -14,13 +14,13 @@ export interface IdentityUtterance { text: string; speaker?: string; scope?: str
 const nonNames = new Set(('a an the from in at on with for to of and but or so i we you he she they it this that my our your his her their name ' +
  'building designing working making developing creating developing a developer designer engineer student founder researcher ' +
  'happy excited sorry glad here going based really just also fine good well okay ok interested ready tired looking doing not ' +
- 'thinking asking talking trying using testing running currently basically learning studying').split(/\s+/));
+ "thinking asking talking trying using testing running currently basically learning studying i'm i've i'd i'll we're we've hey hello um uh").split(/\s+/));
 const normalized = (text: string) => text.replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
 
 /** Conservative self-reference only; a mention of somebody else's name is not an introduction. */
 export function extractSelfIntroduction(text: string): string | undefined {
  const value=normalized(text);let latest:string|undefined;
- for(const match of value.matchAll(/\b(?:my name is|call me|i'm|i am)\s+/gi)){
+ for(const match of value.matchAll(/\b(?:my name(?: is|'s)|call me|i'm|i am)\s+/gi)){
   const preceding=value.slice(0,match.index).split(/[.!?]/).at(-1)??'';
   if(/^\s*(?:if|suppose|imagine|when)\b/i.test(preceding))continue;
   if(/\b(?:he|she|they|you|the app)\s+(?:said|says|say|mentioned)\s*["']?\s*$/i.test(preceding))continue;
@@ -39,11 +39,28 @@ export function extractSelfIntroduction(text: string): string | undefined {
  return latest;
 }
 
+/** Remove personal-introduction spans before looking for product descriptions. */
+export function stripPersonalIntroductions(text:string):string{
+ const value=normalized(text);const spans:{start:number;end:number}[]=[];
+ for(const match of value.matchAll(/\b(?:my name(?: is|'s)?|call me|i'm|i am)\s*/gi)){
+  const start=match.index!;
+  // Only resolve this marker. A later introduction must not supply a name for
+  // an earlier "I'm building" span and accidentally erase the product claim.
+  const immediate=value.slice(start+match[0].length).split(/[.!?,;:]/,1)[0]
+   .split(/\b(?:my name(?: is|'s)?|call me|i'm|i am)\s*/i,1)[0];
+  const name=extractSelfIntroduction(match[0]+immediate);
+  if(name)spans.push({start,end:start+match[0].length+name.length});
+  else if(/^my name\b/i.test(match[0]))spans.push({start,end:start+match[0].length});
+ }
+ let output=value;for(const span of spans.reverse())output=output.slice(0,span.start)+output.slice(span.end);
+ return output.replace(/\b(?:hey|hello|um|uh)\b[,:]?\s*/gi,' ').replace(/\s+/g,' ').trim();
+}
+
 function makesProjectClaim(text: string): boolean {
- return normalized(text).split(/(?<=[.!?])\s+/).some(clause=>{
+ return stripPersonalIntroductions(text).split(/(?<=[.!?])\s+/).some(clause=>{
   if(clause.endsWith('?')||/^\s*(?:if|suppose|imagine|what|how|why|could|would|did|do|have|can)\b/i.test(clause))return false;
   if(/\b(?:he|she|they|you)\s+(?:said|says|say|mentioned)\b/i.test(clause))return false;
-  return /\b(?:i(?:'ve|'m)?|we(?:'ve|'re)?)\s+(?:(?:have|am|are|been|currently|basically|just)\s+)*(?:(?:built|building|created|made|developed|developing|making|launched|designed|designing)\b|work(?:ing)?\s+on\b)/i.test(clause);
+  return /\b(?:i(?:'ve|'m)?|we(?:'ve|'re)?)\s+(?:(?:have|am|are|been|currently|basically|just)\s+)*(?:(?:built|building|created|made|developed|developing|making|launched|designed|designing)\b|work(?:ing)?\s+on\b)\s+(?:a\s+|an\s+|the\s+)?[\p{L}\p{N}]/iu.test(clause);
  });
 }
 

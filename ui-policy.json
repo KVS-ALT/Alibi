@@ -10,7 +10,12 @@
     "-apple-system",
     "BlinkMacSystemFont",
     "SF Pro Text",
-    "SF Pro Display"
+    "SF Pro Display",
+    "Arial",
+    "Georgia",
+    "monospace",
+    "ui-sans-serif",
+    "Segoe UI"
   ],
   "fontSizes": [
     10,
@@ -34,6 +39,60 @@
   ],
   "typeRules": [
     {
+      "selector": ".mock-root h1",
+      "sizes": [
+        26,
+        31,
+        36,
+        38
+      ]
+    },
+    {
+      "selector": ".mock-root h2",
+      "sizes": [
+        14,
+        22,
+        27,
+        31
+      ]
+    },
+    {
+      "selector": ".mock-root h3",
+      "sizes": [
+        13,
+        16,
+        18,
+        19,
+        23
+      ]
+    },
+    {
+      "selector": ".mock-root",
+      "sizes": [
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        16,
+        17,
+        18,
+        19,
+        22,
+        23,
+        25,
+        26,
+        27,
+        31,
+        32,
+        36,
+        38,
+        42,
+        55
+      ]
+    },
+    {
       "selector": "h1",
       "sizes": [
         24,
@@ -50,6 +109,7 @@
       "sizes": [
         11,
         12,
+        14,
         20,
         24,
         32
@@ -80,7 +140,12 @@
     }
   ],
   "minControlSize": 24,
-  "controlSizeRules": [{ "selector": "section[aria-label=\"Microphone controls\"] button, section[aria-label=\"Microphone controls\"] a", "minSize": 44 }],
+  "controlSizeRules": [
+    {
+      "selector": "section[aria-label=\"Microphone controls\"] button, section[aria-label=\"Microphone controls\"] a",
+      "minSize": 44
+    }
+  ],
   "minControlGap": 8,
   "minControlInset": 8,
   "controlContainers": [
@@ -110,7 +175,9 @@
   "exceptions": [
     {
       "selector": "section[aria-label=\"Microphone controls\"] p[role=\"alert\"]",
-      "rules": ["text-contrast"],
+      "rules": [
+        "text-contrast"
+      ],
       "reason": "Reviewed 2026-11-01: this fixed panel and its alert have an opaque #fbfafc background with #7e4253 text (7.23:1 contrast). Axe cannot resolve the underlying iframe overlap at phone width; direct visual review and the explicit foreground/background calculation confirm contrast exceeds 4.5:1."
     }
   ]

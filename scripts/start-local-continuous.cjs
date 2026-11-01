@@ -6,6 +6,8 @@ const { spawn } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const source = process.argv[2] ? parseEnv(fs.readFileSync(path.resolve(process.argv[2]), 'utf8')) : process.env;
 const keys = ['FEATHERLESS_API_KEY', 'SPEECHMATICS_API_KEY'];
+const defaultModel='Qwen/Qwen3-30B-A3B-Instruct-2507';
+const selectedModel=[defaultModel,'deepseek-ai/DeepSeek-V3.2'].includes(source.FEATHERLESS_MODEL?.trim())?source.FEATHERLESS_MODEL.trim():defaultModel;
 const missing = keys.filter(name => !source[name]?.trim());
 if (missing.length) throw new Error('Missing local provider configuration: ' + missing.join(', '));
 const env = {};
@@ -15,7 +17,7 @@ for (const name of ['SystemRoot', 'WINDIR', 'PATH', 'PATHEXT', 'TEMP', 'TMP', 'U
 for (const name of keys) env[name] = source[name];
 Object.assign(env, { NODE_ENV: 'production', ALIBI_LOCAL_PROFILE: 'true', ALIBI_CONTINUOUS_CAPTURE: 'true',
   NEXT_TELEMETRY_DISABLED: '1', DATABASE_URL: '', LIVE_PROVIDER_CALLS_ENABLED: 'true', TEAM_LIVE_TEST_ENABLED: 'true',
-  FEATHERLESS_MODEL: 'Qwen/Qwen2.5-7B-Instruct' });
+  FEATHERLESS_MODEL: selectedModel });
 const logs = fs.mkdtempSync(path.join(process.env.TEMP || process.env.TMP, 'alibi-continuous-'));
 const child = spawn(process.execPath, [path.join(root, 'node_modules/next/dist/bin/next'), 'start', '--hostname', '127.0.0.1', '--port', '3005'], {
   cwd: path.join(root, 'web'), env, windowsHide: true, detached: true,

@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { harness } = require('./helpers/harness.cjs');
+const { modelShape } = require('./helpers/model-shape.cjs');
 
 test('a standalone full self-introduction becomes portfolio identity without inventing a project', async () => {
   const { generatePortfolio } = harness().load('web/lib/generation.ts');
@@ -23,7 +24,7 @@ test('valid AI content cannot replace a spoken name or brand an unnamed project'
   const transcript = "I'm Harsh Anand. I built a car marketplace.";
   const { generatePortfolio } = harness().load('web/lib/generation.ts');
   const draft = await generatePortfolio({ transcript }, { apiKey: '', model: '' });
-  const candidate = structuredClone({ claims: draft.claims, portfolio: draft.portfolio });
+  const candidate = modelShape(draft);
   candidate.portfolio.hero.name = 'AI Invented Person';
   candidate.claims.speakerName = 'AI Invented Person';
   const id = Object.keys(candidate.portfolio.projects)[0];
@@ -43,7 +44,7 @@ test('a model-only extra project cannot become a new portfolio identity', async 
   const transcript = 'I built a car marketplace called Roadnest.';
   const { generatePortfolio } = harness().load('web/lib/generation.ts');
   const draft = await generatePortfolio({ transcript }, { apiKey: '', model: '' });
-  const candidate = structuredClone({ claims: draft.claims, portfolio: draft.portfolio });
+  const candidate = modelShape(draft);
   candidate.portfolio.projects['unheard-product'] = { ...Object.values(candidate.portfolio.projects)[0], title: 'Unheard Product', mockHtml: undefined };
   candidate.claims.projects.push({ id: 'unheard-product', name: 'Unheard Product', saidAbout: ['A separate invented product'] });
   const result = await generatePortfolio({ transcript }, {

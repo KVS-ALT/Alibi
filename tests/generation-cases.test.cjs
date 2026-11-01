@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { harness } = require('./helpers/harness.cjs');
+const { modelShape } = require('./helpers/model-shape.cjs');
 
 async function draft(transcript, previous) {
   const h = harness();
@@ -119,7 +120,7 @@ test('a schema-valid partial model update does not erase a previous project', as
   const { generatePortfolio } = h.load('web/lib/generation.ts');
   const result = await generatePortfolio({ transcript: 'I built a CAD review tool called Modelmate.', previous: prior.portfolio }, {
     apiKey: 'test-placeholder-key', model: 'Qwen/Qwen2.5-7B-Instruct',
-    fetcher: async () => Response.json({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify({claims:update.claims,portfolio:update.portfolio}) } }] }),
+    fetcher: async () => Response.json({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(modelShape(update)) } }] }),
   });
   const titles = Object.values(result.portfolio.projects).map(project => project.title);
   assert.equal(titles.length, 2);

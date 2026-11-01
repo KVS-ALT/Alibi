@@ -7,7 +7,7 @@ import { MockSpec, renderMock } from '@/lib/mock-kits';
 
 type Item = { id: string; title: string; done: boolean };
 
-export default function ProjectApp({ project, theme, storageKey, back }: { project: ProjectSection; theme: string; storageKey: string; back: string }) {
+export default function ProjectApp({ project, theme, storageKey }: { project: ProjectSection; theme: string; storageKey: string; back: string }) {
   const [items, setItems] = useState<Item[]>(() => project.highlights.map((title, index) => ({ id: `seed-${index}`, title, done: false })));
   const [ready, setReady] = useState(false);
   const [query, setQuery] = useState('');
@@ -30,7 +30,7 @@ export default function ProjectApp({ project, theme, storageKey, back }: { proje
   return <main className={`min-h-screen p-6 md:p-12 ${dark ? 'bg-neutral-950 text-white' : 'bg-[#f7f6f3] text-neutral-900'}`}>
     <div className="mx-auto max-w-6xl space-y-8">
       <header className="space-y-4">
-        <a className="inline-flex min-h-11 items-center underline underline-offset-4" href={back}>Back to portfolio</a>
+
         <p className={`text-sm ${muted}`}>{project.category} / Interactive prototype</p>
         <h1 className="break-words text-[40px] font-semibold tracking-tight">{project.title}</h1>
         <p className={`max-w-3xl text-lg ${muted}`}>{project.tagline}</p>

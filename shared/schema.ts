@@ -21,6 +21,7 @@ export const ProjectSection = z.object({
   // "pending" sections render as skeletons; title may already be known from claims
   status: z.enum(["pending", "ready"]),
   title: z.string(),
+  siteUrl: z.string().regex(/^https:\/\/[a-z0-9-]+\.onrender\.com\/?$/).optional(),
 
   // collapsed card
   category: z.string(), // "WEB APP", "CLI", "ML"

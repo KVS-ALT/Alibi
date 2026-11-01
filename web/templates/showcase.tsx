@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Portfolio, ProjectSection } from "@alibi/shared";
-import { Expand, Icon, MockFrame, ProjectDetails, Skeleton, portfolioTitle, projectPreviewHtml, type DetailsTheme } from "./parts";
+import { ProjectLaunch, Expand, Icon, MockFrame, ProjectDetails, Skeleton, portfolioTitle, projectPreviewHtml, type DetailsTheme } from "./parts";
 
 // Designer-dev portfolio in the style of jonathanzhou.dev: big name, "currently" list,
 // image-topped project cards with CATEGORY • YEAR tags.
@@ -108,7 +108,7 @@ function Card({ p }: { p: ProjectSection }) {
   const [open, setOpen] = useState(false);
   return (
     <article className="animate-[fadein_.6s_ease-out]">
-      <button onClick={() => setOpen(!open)} className="group -m-2 block w-[calc(100%+1rem)] rounded-xl p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-600" aria-expanded={open}>
+      <ProjectLaunch url={p.siteUrl} onToggle={() => setOpen(!open)} open={open} className="group -m-2 block w-[calc(100%+1rem)] rounded-xl p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-600">
         <div className="transition-transform duration-300 group-hover:-translate-y-1">
           <MockFrame html={projectPreviewHtml(p)} title={p.title} />
         </div>
@@ -127,7 +127,7 @@ function Card({ p }: { p: ProjectSection }) {
         </div>
         <p className="mt-2 text-neutral-600">{p.tagline}</p>
         {p.award && <p className="mt-2 text-sm font-medium text-indigo-600">🏆 {p.award}</p>}
-      </button>
+      </ProjectLaunch>
       <Expand open={open}>
         <div className="text-neutral-700">
           <ProjectDetails p={p} t={T} open={open} />

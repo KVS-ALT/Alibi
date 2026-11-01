@@ -34,7 +34,7 @@ export default function PortfolioView({ slug }: { slug: string }) {
             version = incomingVersion; setMissing(false); setPortfolio(checked.data);
           }
           // A ready portfolio may keep changing while its conversation is active.
-          if (checked.success && data.ready === true && data.active !== true) return;
+          if (checked.success && data.ready === true && data.active !== true && Object.values(checked.data.projects).every(project => project.status !== 'ready' || project.siteUrl)) return;
         }
       } catch {
         // network blip: keep polling
@@ -53,5 +53,5 @@ export default function PortfolioView({ slug }: { slug: string }) {
 
   const p = portfolio ?? EMPTY;
   const Template = TEMPLATES[p.templateId] ?? TEMPLATES.showcase;
-  return <><Template portfolio={p} /><nav aria-label="Project apps" className="mx-auto flex max-w-4xl flex-wrap gap-4 p-6">{Object.entries(p.projects).filter(([, project]) => project.status === 'ready').map(([id, project]) => <a className="inline-flex min-h-11 items-center rounded-lg border border-neutral-300 bg-white px-4 py-3 text-sm text-neutral-900 underline underline-offset-4" key={id} href={`/p/${encodeURIComponent(slug)}/project/${encodeURIComponent(id)}`}>Open {project.title}</a>)}</nav></>;
+  return <><Template portfolio={p} /><nav aria-label="Project apps" className="mx-auto flex max-w-4xl flex-wrap gap-4 p-6">{Object.entries(p.projects).filter(([, project]) => project.status === 'ready').map(([id, project]) => <a className="inline-flex min-h-11 items-center rounded-lg border border-neutral-300 bg-white px-4 py-3 text-sm text-neutral-900 underline underline-offset-4" key={id} href={project.siteUrl} target="_blank" rel="noopener noreferrer" aria-disabled={!project.siteUrl}>{project.siteUrl ? 'Open ' : 'Deploying '}{project.title}</a>)}</nav></>;
 }

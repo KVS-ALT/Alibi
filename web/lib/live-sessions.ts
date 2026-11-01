@@ -1,4 +1,5 @@
 import 'server-only';
+import { withProjectSites } from './project-hosting';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Claims, Portfolio, type Claims as ClaimsData, type Portfolio as PortfolioData } from '@alibi/shared';
 import { db, hasDb } from './db';
@@ -66,7 +67,7 @@ export function providerMetadata(){const runtime=getLiveRuntime();return {
  speech:{provider:'speechmatics',transport:'proxy',configured:!!process.env.SPEECHMATICS_API_KEY?.trim(),enabled:runtime.liveEnabled&&runtime.limits.maxStartsGlobal>0&&runtime.limits.maxSessionAudioSeconds>0},
 };}
 export function storageMode(){return hasDb()?'postgres':'memory';}
-export function sessionPayload(session:LiveSession){return {id:session.id,slug:session.slug,url:'/p/'+session.slug,status:session.status,portfolio:session.portfolio,version:session.version,error:session.error,active:session.active,storage:storageMode(),providers:providerMetadata()};}
+export function sessionPayload(session:LiveSession){return {id:session.id,slug:session.slug,url:'/p/'+session.slug,status:session.status,portfolio:withProjectSites(session.slug,session.portfolio),version:session.version,error:session.error,active:session.active,storage:storageMode(),providers:providerMetadata()};}
 async function save(session:LiveSession){
  const pending=(session.persistence??Promise.resolve()).catch(()=>{}).then(async()=>{
   if(session.deleted||!hasDb())return;
@@ -167,10 +168,10 @@ async function build(session:LiveSession){
 export async function getPublicPortfolio(slug:string){
  const session=[...state.sessions.values()].find(item=>item.slug===slug);
  if(session?.deleted)return undefined;
- if(session)return {portfolio:Portfolio.parse(session.portfolio),ready:session.version>0,active:session.active||session.building,version:session.version,storage:storageMode()};
+ if(session)return {portfolio:withProjectSites(slug,Portfolio.parse(session.portfolio)),ready:session.version>0,active:session.active||session.building,version:session.version,storage:storageMode()};
  if(!hasDb())return undefined;
  const {rows}=await db().query('select portfolio,metrics from sessions where slug=$1',[slug]);if(!rows[0])return undefined;
- return {portfolio:Portfolio.parse(rows[0].portfolio),ready:Boolean(rows[0].metrics?.readyAt),active:false,version:rows[0].metrics?.version??0,storage:'postgres'};
+ return {portfolio:withProjectSites(slug,Portfolio.parse(rows[0].portfolio)),ready:Boolean(rows[0].metrics?.readyAt),active:false,version:rows[0].metrics?.version??0,storage:'postgres'};
 }
 export function claimInteractiveTest(token:string){
  if(!grantTokenValid(token))throw new LiveHttpError(404,'NOT_FOUND','Test link unavailable or expired.');

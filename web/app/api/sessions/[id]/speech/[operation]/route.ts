@@ -54,7 +54,7 @@ export async function POST(request: Request, context: Context) {
     if (operation === 'pcm') {
       if (request.headers.get('content-type')?.split(';')[0].trim() !== 'application/octet-stream') throw new LiveHttpError(415, 'PCM_REQUIRED', 'Send raw PCM16 mono audio at 16 kHz.');
       const stream = identity(id, request.headers.get('x-speech-stream-id'));
-      const accepted = proxy.writePcm({ ...stream, audio: await readBytes(request, 16384) });
+      const accepted = proxy.writePcm({ ...stream, audio: await readBytes(request, 65536) });
       if (!accepted.ok) setSpeechState(id, 'idle'); return result(accepted);
     }
     const body = await readJson(request);

@@ -91,24 +91,37 @@ export function createSpeechmaticsProxyCapture(options: ProxyCaptureOptions, dep
   let snapshot: CaptureSnapshot & { errorCode?: string } = { status: 'idle', supported, starting: false, interimText: '' };
   let consented = false, live = false, disposed = false, version = 0;
   let abort = new AbortController(), identity: ProxyIdentity | undefined, source: PcmSource | undefined, events: { close(): void } | undefined;
-  let queue = { bytes: 0, promise: Promise.resolve() };
+  // Audio waits in a backlog; one uploader sends everything buffered so far per request, so a slow
+  // request makes the next upload bigger instead of failing. Only a sustained ~10s backlog is fatal.
+  const MAX_UPLOAD_BYTES = 48000, MAX_BACKLOG_BYTES = 320000;
+  let backlog: Uint8Array[] = [], backlogBytes = 0, uploader: Promise<void> | null = null;
   const update = (patch: Partial<typeof snapshot>) => { snapshot = { ...snapshot, ...patch }; listeners.forEach(listener => listener()); };
   const valid = (epoch: number) => live && !disposed && version === epoch;
   function stopLocal() {
     live = false; version++; abort.abort(); source?.stop(); source = undefined; events?.close(); events = undefined;
-    const previous = identity; identity = undefined; queue = { bytes: 0, promise: Promise.resolve() };
+    const previous = identity; identity = undefined; backlog = []; backlogBytes = 0; uploader = null;
     if (previous) void transport.end(previous).catch(() => {});
   }
   function mute() { if (!consented || snapshot.status === 'ended' || !live && !snapshot.starting) return; stopLocal(); update({ status: 'muted', starting: false, interimText: '' }); }
   function fail(code: string) { mute(); update({ status: 'muted', starting: false, interimText: '', error: safeError, errorCode: code }); }
   function enqueue(bytes: Uint8Array, epoch: number) {
     if (!valid(epoch) || !identity) return;
-    if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length % 2 || bytes.length > 16384 || queue.bytes + bytes.length > 32000) { fail('audio_backpressure'); return; }
-    const pending = queue, destination = identity, audio = new Uint8Array(bytes), signal = abort.signal;
-    pending.bytes += audio.length;
-    pending.promise = pending.promise.then(async () => {
-      if (valid(epoch)) await bounded(transport.writePcm(destination, audio, signal), signal, 10_000);
-    }).catch(() => { if (valid(epoch)) fail('upload_failed'); }).finally(() => { pending.bytes -= audio.length; });
+    if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length % 2) return;
+    if (backlogBytes + bytes.length > MAX_BACKLOG_BYTES) { fail('audio_backpressure'); return; }
+    backlog.push(new Uint8Array(bytes)); backlogBytes += bytes.length;
+    if (!uploader) { const run: Promise<void> = pump(epoch).finally(() => { if (uploader === run) uploader = null; }); uploader = run; }
+  }
+  async function pump(epoch: number) {
+    const destination = identity!, signal = abort.signal;
+    while (valid(epoch) && backlogBytes > 0) {
+      const parts: Uint8Array[] = []; let size = 0;
+      while (backlog.length && (size === 0 || size + backlog[0].length <= MAX_UPLOAD_BYTES)) { const part = backlog.shift()!; parts.push(part); size += part.length; }
+      backlogBytes -= size;
+      const audio = new Uint8Array(size); let offset = 0;
+      for (const part of parts) { audio.set(part, offset); offset += part.length; }
+      try { await bounded(transport.writePcm(destination, audio, signal), signal, 10_000); }
+      catch { if (valid(epoch)) fail('upload_failed'); return; }
+    }
   }
   async function activate(resuming: boolean) {
     if (disposed || snapshot.status === 'ended' || live || snapshot.starting || resuming && !consented || !resuming && consented) return;
@@ -134,7 +147,7 @@ export function createSpeechmaticsProxyCapture(options: ProxyCaptureOptions, dep
     const epoch = version;
     try {
       await bounded(Promise.resolve(source.flush()), abort.signal, 1000);
-      await bounded(queue.promise, abort.signal, 10_000);
+      while (uploader) await bounded(uploader, abort.signal, 10_000);
       if (valid(epoch) && identity) await bounded(transport.flush(identity, abort.signal), abort.signal, 11_000);
     } catch { if (valid(epoch)) fail('flush_failed'); throw new Error(safeError); }
   }

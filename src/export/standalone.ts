@@ -17,6 +17,21 @@ export function mountStandalone(spec: UiSpec) {
     return node;
   }
   function currentScreen() { return spec.screens.find(s => s.id === active)!; }
+  function validTarget(formId: string) {
+    const target = spec.screens.flatMap(screen => screen.components).find(component => component.id === formId);
+    if (target?.type !== 'form') return false;
+    return target.properties.fields.every(field => {
+      const value = forms[formId]?.[field.id] ?? '';
+      if (field.required && !value.trim()) return false;
+      if (field.type === 'select') return !value && !field.required || Boolean(field.options?.includes(value));
+      const input = document.createElement('input');
+      input.type = field.type;
+      input.required = field.required;
+      if (field.type === 'number') { input.min = '1'; input.step = '1'; }
+      input.value = value;
+      return (!value || Boolean(input.value)) && input.checkValidity();
+    });
+  }
   function apply(list: Action[], componentId?: string) {
     for (const action of list) {
       switch (action.type) {
@@ -27,6 +42,7 @@ export function mountStandalone(spec: UiSpec) {
           if (componentId) Object.assign(values, forms[componentId]);
           break;
         case 'submitDemoForm':
+          if (!validTarget(action.formId)) break;
           values[action.resultStateKey] = 'submitted';
           submitted[action.formId] = 'Demo request received locally. Nothing was sent to a server.';
           break;

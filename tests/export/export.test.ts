@@ -5,6 +5,9 @@ import { createBrief, generatePrototype } from '../../src/generation';
 import { createProjectArchive, createProjectFiles, renderStandaloneHtml } from '../../src/export';
 import { TEMPLATE_CATALOG } from '../../src/templates';
 import { getTemplatePresentation } from '../../src/templates/presentation';
+import { createElement } from 'react';
+import { cleanup, fireEvent, render } from '@testing-library/react';
+import { SourceApp } from '../../src/export/SourceApp';
 import type { UiSpec } from '../../src/contracts';
 
 async function fixture(templateId = 'bakery'): Promise<UiSpec> {
@@ -58,7 +61,7 @@ describe('the exported project', () => {
     expect(d.querySelector('.section-heading h2')?.textContent).toBe(spec.screens[1].title);
     const form = d.querySelector('form')!;
     form.dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
-    expect(d.querySelector('.form-success')).toBeNull();
+    expect(Boolean(d.querySelector('.form-success'))).toBe(false);
     for (const input of Array.from(form.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input,select'))) {
       input.value = input.tagName === 'SELECT' ? (input as HTMLSelectElement).options[1].value : input.type === 'email' ? 'visitor@example.test' : input.type === 'date' ? '2026-12-01' : input.type === 'number' ? '2' : 'Test Visitor';
       input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
@@ -119,5 +122,21 @@ describe('the exported project', () => {
     expect(extracted).toEqual(expected);
     expect(view.getUint32(archive.length - 22, true)).toBe(0x06054b50);
     expect(view.getUint16(archive.length - 12, true)).toBe(Object.keys(expected).length);
+  });
+
+  it('requires valid target form data when a separate button invokes a submission', async () => {
+    const spec = await fixture();
+    spec.screens[1].components.unshift({ id: 'shortcut-submit', type: 'button', properties: { label: 'Submit by shortcut' }, actions: [{ type: 'submitDemoForm', formId: 'contact-form', resultStateKey: 'shortcut-result' }] });
+    const dom = open(spec), d = dom.window.document;
+    (d.querySelector('.content-nav button:last-child') as HTMLButtonElement).click();
+    const shortcut = d.getElementById('shortcut-submit') as HTMLButtonElement;
+    shortcut.click();
+    expect(Boolean(d.querySelector('.form-success'))).toBe(false);
+    const view = render(createElement(SourceApp, { spec }));
+    fireEvent.click(view.container.querySelector('.content-nav button:last-child')!);
+    fireEvent.click(Array.from(view.container.querySelectorAll('button')).find(button => button.textContent === 'Submit by shortcut')!);
+    expect(Boolean(view.container.querySelector('.form-success'))).toBe(false);
+    cleanup();
+    dom.window.close();
   });
 });

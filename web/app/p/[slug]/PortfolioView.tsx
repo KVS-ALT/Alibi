@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Portfolio } from "@alibi/shared";
+import { Portfolio as PortfolioSchema, type Portfolio } from "@alibi/shared";
 import { TEMPLATES } from "@/templates";
 
 const POLL_MS = 1500;
@@ -13,17 +13,28 @@ export default function PortfolioView({ slug }: { slug: string }) {
 
   useEffect(() => {
     let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let version = -1;
+    const controller = new AbortController();
+    setPortfolio(null); setMissing(false);
 
     async function tick() {
       try {
-        const res = await fetch(`/api/p/${encodeURIComponent(slug)}`, { cache: "no-store" });
+        const res = await fetch(`/api/p/${encodeURIComponent(slug)}`, { cache: "no-store", signal: controller.signal });
+        if (stopped) return;
         if (res.status === 404) {
           setMissing(true);
+          return;
         } else if (res.ok) {
-          const data: { portfolio: Portfolio; ready: boolean } = await res.json();
-          setPortfolio(data.portfolio);
-          if (data.ready) return; // done building, stop polling
+          const data = await res.json();
+          if (stopped) return;
+          const checked = PortfolioSchema.safeParse(data.portfolio);
+          const incomingVersion = Number.isSafeInteger(data.version) ? data.version as number : 0;
+          if (checked.success && incomingVersion >= version) {
+            version = incomingVersion; setMissing(false); setPortfolio(checked.data);
+          }
+          // A ready portfolio may keep changing while its conversation is active.
+          if (checked.success && data.ready === true && data.active !== true) return;
         }
       } catch {
         // network blip: keep polling
@@ -33,7 +44,8 @@ export default function PortfolioView({ slug }: { slug: string }) {
     tick();
     return () => {
       stopped = true;
-      clearTimeout(timer);
+      controller.abort();
+      if (timer) clearTimeout(timer);
     };
   }, [slug]);
 

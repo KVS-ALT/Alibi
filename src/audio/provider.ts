@@ -84,7 +84,7 @@ export function createHttpSpeechTransport(fetcher: typeof fetch = fetch): Provid
   };
   return {
     async start(sessionId, signal) {
-      const response = await fetcher('/api/sessions', { method: 'POST', credentials: 'same-origin', redirect: 'error', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sessionId }) });
+      const response = await fetcher('/api/sessions', { method: 'POST', credentials: 'same-origin', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]), headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sessionId }) });
       if (!response.ok) throw new Error(fallbackMessage);
       await request(sessionId, 'start', signal, JSON.stringify({ consented: true }));
     },
@@ -196,7 +196,7 @@ export function createProviderCapture(options: ProviderCaptureOptions, dependenc
     live = true; const version = ++epoch; abort = new AbortController();
     update({ starting: true, error: undefined });
     try {
-      if (resuming) await transport.resume(options.sessionId, abort.signal); else await transport.start(options.sessionId, abort.signal);
+      if (resuming) await bounded(transport.resume(options.sessionId, abort.signal), abort.signal, 25_000); else await bounded(transport.start(options.sessionId, abort.signal), abort.signal, 25_000);
       if (!valid(version)) return;
       const acquired = await acquire();
       if (!valid(version)) { acquired.getTracks().forEach(track => track.stop()); return; }

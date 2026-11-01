@@ -64,7 +64,7 @@ describe('bounded browser recording adapter', () => {
     const createRecorder = vi.fn();
     const transport = { start: vi.fn(async () => {}), mute: vi.fn(async () => {}), resume: vi.fn(async () => {}), end: vi.fn(async () => {}), audio: vi.fn() };
     const capture = createProviderCapture({ sessionId: 's1', onSegment: vi.fn(), onBuild: vi.fn(), transport }, { supported: true, createRecorder, getUserMedia: () => new Promise(resolve => { grant = resolve; }) });
-    const pending = capture.start(); await Promise.resolve();
+    const pending = capture.start(); await vi.waitFor(() => expect(grant).toBeTypeOf('function'));
     capture.end(); grant({ getTracks: () => [track] }); await pending;
     expect(track.stop).toHaveBeenCalledTimes(1); expect(createRecorder).not.toHaveBeenCalled(); expect(transport.audio).not.toHaveBeenCalled();
   });
@@ -84,5 +84,14 @@ describe('bounded browser recording adapter', () => {
     await pending;
     expect(capture.getSnapshot()).toMatchObject({ status: 'muted', error: expect.stringMatching(/typ/i) });
     expect(track.stop).toHaveBeenCalledTimes(1);
+  }, 1000);
+  it('bounds stalled authorization without opening the microphone', async () => {
+    vi.useFakeTimers();
+    const { capture, transport, getUserMedia } = setup();
+    transport.start.mockImplementation(() => new Promise<void>(() => {}));
+    const pending = capture.start();
+    await vi.advanceTimersByTimeAsync(25_000); await pending;
+    expect(capture.getSnapshot()).toMatchObject({ status: 'muted', starting: false });
+    expect(getUserMedia).not.toHaveBeenCalled();
   }, 1000);
 });

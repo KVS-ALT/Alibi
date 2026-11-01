@@ -1,40 +1,136 @@
-import type { Action, UiSpec } from '../contracts';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import type { PreviewState, UiSpec } from '../contracts';
 import { validateUiSpec } from '../generation';
-import { TEMPLATE_CATALOG } from '../templates';
-const safeJson=(value:unknown)=>JSON.stringify(value,null,2).replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
-function requireValid(spec:UiSpec):UiSpec{const result=validateUiSpec(spec);if(!result.success)throw new Error(`Export blocked: ${result.error}`);return result.data;}
-// This readable runtime ships in the source download. It only creates DOM nodes and text.
-function runtime(spec:UiSpec){
- const root=document.getElementById('app')!;let active=spec.screens[0].id;
- const values:Record<string,string|number|boolean|null>=Object.create(null);const filters:Record<string,{field:string;stateKey:string}>=Object.create(null);const forms:Record<string,Record<string,string>>=Object.create(null);const submitted:Record<string,string>=Object.create(null);
- function element(tag:string,text?:string){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;}
- function actions(list:Action[],formId?:string){for(const action of list){switch(action.type){case 'navigate':active=action.screenId;break;case 'setState':values[action.key]=action.value;break;case 'filter':filters[action.dataKey]={field:action.field,stateKey:action.stateKey};if(formId)Object.assign(values,forms[formId]);break;case 'submitDemoForm':submitted[action.formId]='Demo request received locally. Nothing was sent to a server.';values[action.resultStateKey]='submitted';break;}}render();}
- function render(){root.replaceChildren();const label=element('p','Demo generator · '+spec.demoDataLabel);label.className='demo-label';root.append(label);const screen=spec.screens.find(s=>s.id===active)!;root.append(element('h1',screen.title));for(const c of screen.components){const section=element('section');section.id=c.id;
- if(c.type==='text'){section.append(element('p',c.properties.text));}
- if(c.type==='card'){section.className='card';section.append(element('h2',c.properties.title),element('p',c.properties.body));}
- if(c.type==='button'){const b=element('button',c.properties.label);b.onclick=()=>actions(c.actions);section.append(b);}
- if(c.type==='navigation'){const nav=element('nav');for(const item of c.properties.items){const b=element('button',item.label);b.setAttribute('aria-current',active===item.screenId?'page':'false');b.onclick=()=>{active=item.screenId;render();};nav.append(b);}section.append(nav);}
- if(c.type==='form'){const form=document.createElement('form');forms[c.id]??=Object.create(null);for(const f of c.properties.fields){const label=element('label',f.label);let input:HTMLInputElement|HTMLSelectElement;if(f.type==='select'){input=document.createElement('select');for(const value of f.options??[]){const option=element('option',value) as HTMLOptionElement;option.value=value;input.append(option);}}else{input=document.createElement('input');input.type=f.type;}input.name=f.id;input.required=f.required;input.value=forms[c.id][f.id]??(f.type==='select'?(f.options?.[0]??''):'');forms[c.id][f.id]=input.value;input.oninput=()=>{forms[c.id][f.id]=input.value;};label.append(input);form.append(label);}const submit=element('button',c.properties.submitLabel??'Submit demo');submit.setAttribute('type','submit');form.append(submit);form.onsubmit=e=>{e.preventDefault();if(form.reportValidity())actions(c.actions,c.id);};section.append(form);if(submitted[c.id]){const status=element('p',submitted[c.id]);status.setAttribute('role','status');section.append(status);}}
- if(c.type==='table'){const table=element('table');const head=element('tr');for(const column of c.properties.columns)head.append(element('th',column));const thead=element('thead');thead.append(head);table.append(thead);const body=element('tbody');const filter=filters[c.properties.dataKey];let rows=spec.demoData[c.properties.dataKey];if(filter&&values[filter.stateKey]&&values[filter.stateKey]!=='All'){rows=rows.filter(row=>String(row[filter.field])===String(values[filter.stateKey]));}for(const row of rows){const tr=element('tr');for(const column of c.properties.columns)tr.append(element('td',String(row[column]??'')));body.append(tr);}table.append(body);section.append(table);if(!rows.length)section.append(element('p','No matching demo items.'));}
- root.append(section);}}
- render();
+import { Preview } from '../ui/Preview';
+import { mountStandalone } from './standalone';
+import previewCss from '../ui/preview.css?raw';
+import previewSource from '../ui/Preview.tsx?raw';
+import templatesSource from '../templates/index.ts?raw';
+import presentationSource from '../templates/presentation.ts?raw';
+import contractsSource from '../contracts/index.ts?raw';
+import appSource from './SourceApp.tsx?raw';
+import license from '../../LICENSE?raw';
+import manifest from '../../package.json';
+
+const safeJson = (value: unknown) => JSON.stringify(value, null, 2).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+function requireValid(spec: UiSpec): UiSpec {
+  const result = validateUiSpec(spec);
+  if (!result.success) throw new Error('Export blocked: ' + result.error);
+  return result.data;
 }
-export function renderStandaloneHtml(input:UiSpec):string{
- const spec=requireValid(input);const accent=TEMPLATE_CATALOG.find(t=>t.id===spec.templateId)?.accent??'#4f46e5';
- // Accent is trusted reviewed catalog data, never generated/user CSS.
- const color=/^#[0-9a-fA-F]{3,8}$/.test(accent)?accent:'#4f46e5';
- return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Exported demo prototype</title><style>:root{font-family:system-ui,sans-serif;color:#172023;background:#f5f3ef;--accent:${color}}*{box-sizing:border-box}body{margin:0}main{max-width:1050px;margin:auto;padding:36px 24px}h1{font-size:clamp(2rem,6vw,4rem);max-width:900px}h2{font-size:1.2rem}p{line-height:1.65}section{margin:22px 0}.demo-label{font-size:12px;letter-spacing:.06em}nav{display:flex;gap:10px;flex-wrap:wrap}.card,form{padding:24px;background:white;border:1px solid #ddd;border-radius:14px}button{background:var(--accent);color:white;border:0;border-radius:6px;padding:12px 18px;cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #111;outline-offset:3px}form{display:grid;gap:18px;max-width:620px}label{display:grid;gap:7px}input,select{padding:12px;border:1px solid #aaa;border-radius:5px;font:inherit}table{border-collapse:collapse;width:100%;background:white}td,th{padding:14px;border-bottom:1px solid #ddd;text-align:left}section:has(table){overflow:auto}</style></head><body><main id="app"></main><script id="prototype-config" type="application/json">${safeJson(spec)}</script><script>\n(${runtime.toString()})(JSON.parse(document.getElementById('prototype-config').textContent));\n</script></body></html>`;
+
+/** Render the same React component used by the live preview, with no event state. */
+function screenMarkup(spec: UiSpec, screenId: string): string {
+  const state: PreviewState = { sessionId: spec.sessionId, activeScreenId: screenId, values: {}, forms: {}, filters: {}, submitted: {} };
+  return renderToStaticMarkup(createElement(Preview, { spec, state, onAction: () => {}, onFieldChange: () => {} }));
 }
-export function createProjectFiles(input:UiSpec):Record<string,string>{const spec=requireValid(input);return {'index.html':renderStandaloneHtml(spec),'config.json':JSON.stringify(spec,null,2),'README.md':`# Your exported prototype\n\nOpen index.html in a modern browser. No installation, account, API key, network, or server is required.\n\nGenerated using the Demo generator and reviewed template: ${spec.templateId} (version ${spec.templateVersion}). The page includes its readable JavaScript renderer and the exact exported configuration. Edit text/content in config.json for handoff; update the application/json block in index.html to apply those changes.\n\nNavigation, filters, form validation, and confirmation messages run locally. Form details live in memory and are lost on reload. All listings are synthetic demo data. This export does not send email, take payments, book appointments, authenticate users, or connect to a real backend.\n\nThe source is yours to inspect and continue. The standalone export uses a compact responsive presentation; the configuration and interactions match the project preview, while the studio template styling may differ.\n`,'ROADMAP.md':'# Remaining roadmap\n\n- Review all generated copy and replace synthetic data.\n- Customize this source and verify accessibility on target devices.\n- Connect forms and actions to an authorized backend with server validation.\n- Add authentication, persistence, delivery, or payments only if your product requires them.\n- Test and deploy with your own hosting provider. Deployment is not included.\n'};}
-function crc32(data:Uint8Array){let crc=0xffffffff;for(const byte of data){crc^=byte;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return (crc^0xffffffff)>>>0;}
-/** Standard ZIP, uncompressed: readable source files, no dependency or remote service. */
-export function createProjectArchive(spec:UiSpec):Uint8Array{
- const enc=new TextEncoder();const chunks:Uint8Array[]=[];const central:Uint8Array[]=[];let offset=0;
- const header=(size:number)=>{const a=new Uint8Array(size);return {a,v:new DataView(a.buffer)};};
- for(const [name,source]of Object.entries(createProjectFiles(spec))){const filename=enc.encode(name),data=enc.encode(source),crc=crc32(data);const local=header(30);local.v.setUint32(0,0x04034b50,true);local.v.setUint16(4,20,true);local.v.setUint32(14,crc,true);local.v.setUint32(18,data.length,true);local.v.setUint32(22,data.length,true);local.v.setUint16(26,filename.length,true);chunks.push(local.a,filename,data);
- const c=header(46);c.v.setUint32(0,0x02014b50,true);c.v.setUint16(4,20,true);c.v.setUint16(6,20,true);c.v.setUint32(16,crc,true);c.v.setUint32(20,data.length,true);c.v.setUint32(24,data.length,true);c.v.setUint16(28,filename.length,true);c.v.setUint32(42,offset,true);central.push(c.a,filename);offset+=30+filename.length+data.length;}
- const centralSize=central.reduce((sum,c)=>sum+c.length,0);const end=header(22);end.v.setUint32(0,0x06054b50,true);end.v.setUint16(8,central.length/2,true);end.v.setUint16(10,central.length/2,true);end.v.setUint32(12,centralSize,true);end.v.setUint32(16,offset,true);chunks.push(...central,end.a);const output=new Uint8Array(offset+centralSize+22);let position=0;for(const part of chunks){output.set(part,position);position+=part.length;}return output;
+
+export function renderStandaloneHtml(input: UiSpec): string {
+  const spec = requireValid(input);
+  const markup = spec.screens.map(screen => ({ id: screen.id, html: screenMarkup(spec, screen.id) }));
+  return [
+    '<!doctype html>',
+    '<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
+    '<title>Exported demo prototype</title>',
+    '<style>body{margin:0}#app{min-height:100vh}' + previewCss + '</style></head><body>',
+    '<main id="app">' + markup[0].html + '</main>',
+    ...markup.map(screen => '<template id="screen-' + screen.id + '">' + screen.html + '</template>'),
+    '<script id="prototype-config" type="application/json">' + safeJson(spec) + '</script>',
+    '<script>\n(' + mountStandalone.toString() + ')(JSON.parse(document.getElementById("prototype-config").textContent));\n</script>',
+    '</body></html>',
+  ].join('\n');
 }
-function download(data:BlobPart,filename:string,type:string){const url=URL.createObjectURL(new Blob([data],{type}));const link=document.createElement('a');link.href=url;link.download=filename;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-export function downloadConfig(spec:UiSpec):void{download(JSON.stringify(requireValid(spec),null,2),'prototype-config.json','application/json');}
-export function downloadProject(spec:UiSpec):void{const archive=createProjectArchive(spec);download(archive.slice().buffer,'prototype-source.zip','application/zip');}
+
+const readme = [
+  '# Your exported prototype',
+  '',
+  'Open index.html directly in a modern browser. It works offline with no installation, account, API key, or server.',
+  '',
+  'The standalone page contains the exact reviewed template markup and stylesheet used by the project preview, plus readable local JavaScript for navigation, search, category filters, browser form validation, and confirmation messages. The export starts a fresh interaction session: preview form entries, filters, and receipts are not copied. Form details stay in memory and disappear on reload. Nothing is sent to a server. All listings are synthetic demo data.',
+  '',
+  '## Editable React source',
+  '',
+  'The source/ folder is a complete Vite + React project with the actual Preview.tsx component, template catalog, presentation helper, stylesheet, typed contracts, local action adapter, and exact configuration used for this export. The root config.json is the same configuration for inspection or handoff.',
+  '',
+  'To develop it, install Node.js 22.12 or newer, then run:',
+  '',
+  '    cd source',
+  '    npm install',
+  '    npm run dev',
+  '',
+  'Edit source/config.json to change the source project; run npm run build to create source/dist/. Changes to a config.json file do not automatically rewrite the already exported standalone index.html. Generate another export from the builder or build the editable source when the configuration changes. Dependency installation requires an internet connection; opening the standalone page does not.',
+  '',
+  '## Demo limits',
+  '',
+  'This export does not send email, take payments, book appointments, authenticate users, or connect to a production backend. Review all copy and replace demo data before using the source as a product. See ROADMAP.md for the remaining work.',
+  '',
+].join('\n');
+
+export function createProjectFiles(input: UiSpec): Record<string, string> {
+  const spec = requireValid(input), config = JSON.stringify(spec, null, 2);
+  return {
+    'index.html': renderStandaloneHtml(spec),
+    'config.json': config,
+    'README.md': readme + '\nReviewed template: ' + spec.templateId + ' (version ' + spec.templateVersion + '). Generated with the Demo generator.\n',
+    'ROADMAP.md': '# Remaining roadmap\n\n- Review generated copy and replace synthetic data.\n- Verify accessibility and responsive layouts on target devices.\n- Connect forms and actions to an authorized backend with server validation.\n- Add persistence, email delivery, authentication, or payments only if your product needs them.\n- Test and deploy with your hosting provider. Deployment is not included.\n',
+    'LICENSE': license,
+    'source/config.json': config,
+    'source/package.json': JSON.stringify({
+      name: 'exported-demo-prototype', version: '1.0.0', private: true, type: 'module',
+      scripts: { dev: 'vite --host 127.0.0.1', build: 'tsc --noEmit && vite build', preview: 'vite preview --host 127.0.0.1' },
+      dependencies: { react: manifest.dependencies.react, 'react-dom': manifest.dependencies['react-dom'] },
+      devDependencies: { '@types/react': manifest.devDependencies['@types/react'], '@types/react-dom': manifest.devDependencies['@types/react-dom'], '@vitejs/plugin-react': manifest.devDependencies['@vitejs/plugin-react'], typescript: manifest.devDependencies.typescript, vite: manifest.devDependencies.vite },
+    }, null, 2),
+    'source/index.html': '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Your demo prototype</title><style>body{margin:0}</style></head><body><main id="root"></main><script type="module" src="/src/main.tsx"></script></body></html>\n',
+    'source/tsconfig.json': JSON.stringify({ compilerOptions: { target: 'ES2022', lib: ['ES2022', 'DOM', 'DOM.Iterable'], module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noEmit: true, skipLibCheck: true, esModuleInterop: true, resolveJsonModule: true }, include: ['src', 'vite.config.ts'] }, null, 2),
+    'source/vite.config.ts': "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\nexport default defineConfig({ plugins: [react()], base: './' });\n",
+    'source/src/main.tsx': "import { createElement } from 'react';\nimport { createRoot } from 'react-dom/client';\nimport { SourceApp } from './export/SourceApp';\nimport type { UiSpec } from './contracts';\nimport config from '../config.json';\ncreateRoot(document.getElementById('root')!).render(createElement(SourceApp, { spec: config as UiSpec }));\n",
+    'source/src/export/SourceApp.tsx': appSource,
+    'source/src/ui/Preview.tsx': previewSource,
+    'source/src/ui/preview.css': previewCss,
+    'source/src/templates/index.ts': templatesSource,
+    'source/src/templates/presentation.ts': presentationSource,
+    'source/src/contracts/index.ts': contractsSource,
+    'source/LICENSE': license,
+  };
+}
+
+function crc32(data: Uint8Array) {
+  let crc = 0xffffffff;
+  for (const byte of data) { crc ^= byte; for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+/** Standard deterministic UTF-8 ZIP with stored members, readable by local unzip tools. */
+export function createProjectArchive(spec: UiSpec): Uint8Array {
+  const encoder = new TextEncoder(), chunks: Uint8Array[] = [], central: Uint8Array[] = [];
+  let offset = 0;
+  function header(size: number) { const a = new Uint8Array(size); return { a, v: new DataView(a.buffer) }; }
+  for (const [name, source] of Object.entries(createProjectFiles(spec))) {
+    const filename = encoder.encode(name), data = encoder.encode(source), crc = crc32(data), local = header(30);
+    local.v.setUint32(0, 0x04034b50, true); local.v.setUint16(4, 20, true); local.v.setUint16(6, 0x0800, true); local.v.setUint16(12, 0x21, true);
+    local.v.setUint32(14, crc, true); local.v.setUint32(18, data.length, true); local.v.setUint32(22, data.length, true); local.v.setUint16(26, filename.length, true);
+    chunks.push(local.a, filename, data);
+    const c = header(46);
+    c.v.setUint32(0, 0x02014b50, true); c.v.setUint16(4, 20, true); c.v.setUint16(6, 20, true); c.v.setUint16(8, 0x0800, true); c.v.setUint16(14, 0x21, true);
+    c.v.setUint32(16, crc, true); c.v.setUint32(20, data.length, true); c.v.setUint32(24, data.length, true); c.v.setUint16(28, filename.length, true); c.v.setUint32(42, offset, true);
+    central.push(c.a, filename); offset += 30 + filename.length + data.length;
+  }
+  const centralSize = central.reduce((sum, c) => sum + c.length, 0), end = header(22);
+  end.v.setUint32(0, 0x06054b50, true); end.v.setUint16(8, central.length / 2, true); end.v.setUint16(10, central.length / 2, true); end.v.setUint32(12, centralSize, true); end.v.setUint32(16, offset, true);
+  chunks.push(...central, end.a);
+  const output = new Uint8Array(offset + centralSize + 22);
+  let position = 0;
+  for (const part of chunks) { output.set(part, position); position += part.length; }
+  return output;
+}
+
+function download(data: BlobPart, filename: string, type: string) {
+  const url = URL.createObjectURL(new Blob([data], { type })), link = document.createElement('a');
+  link.href = url; link.download = filename; document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+export function downloadConfig(spec: UiSpec): void { download(JSON.stringify(requireValid(spec), null, 2), 'prototype-config.json', 'application/json'); }
+export function downloadProject(spec: UiSpec): void { download(createProjectArchive(spec).slice().buffer, 'prototype-source.zip', 'application/zip'); }
+

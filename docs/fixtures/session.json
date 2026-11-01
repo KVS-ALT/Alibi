@@ -148,7 +148,9 @@
           "duration": "long"
         }
       ]
-    }
+    },
+    "templateId": "studio-booking",
+    "templateVersion": 1
   },
   "captureStatus": "listening",
   "buildStatus": "ready"

@@ -1,7 +1,7 @@
 # Proposed build scope
 ## Product and demo
 Hackathon theme: "Create a product to help you LARP as someone you are not."
-Help a person act as an app builder during a conversation: listen silently during an explicitly started session, then turn it into a working interactive prototype on screen. This is a prototype builder; product name and visual direction remain open.
+Help a person act as an app builder during a conversation: listen silently during an explicitly started session, then turn it into a working interactive prototype on screen using reviewed templates. The user target is 20 templates, each checked visually for quality. This is a prototype builder; product name and visual direction remain open.
 
 Example: a fictional studio owner asks for an appointment tool. Start a consented listening session, describe the workflow, trigger a build without ending the call, and show a prototype with navigation, a service filter, and a local demo booking form. A follow-up brief revises the prototype while compatible state survives.
 
@@ -15,10 +15,13 @@ Example: a fictional studio owner asks for an appointment tool. Start a consente
 - Explicit tap-to-start microphone consent and visible idle/capturing/building/ready/error status.
 - Continuous silent listening and accumulated context during the active session; builds run in the background without requiring a new capture clip each time.
 - Configurable spoken build/pause controls plus manual Build, Mute and End. Exact phrases remain undecided. Build does not end capture; Mute pauses microphone capture/transmission; End releases capture and closes the stream.
-- No microphone capture or audio transmission before Start or while muted. End releases capture and closes the stream.
+- No microphone capture or audio transmission before Start or while muted.
+- Wearer-only capture is an unresolved intent, not a supported privacy guarantee: a microphone may record nearby participants. Use a consented or dictated-brief demo and test actual hardware; do not claim other voices are excluded. End releases capture and closes the stream.
 - AirPods/phone/laptop input must be tested on the actual device. Browser foreground support is the proposed target; OS background/locked-phone capture is not promised. Test participant voices and noisy venues.
 - Final transcript segments become a versioned structured brief, then a schema-validated UI component specification.
-- Render interactive screens using an allowed component catalog: text, card, form, table, navigation and button.
+- Select and configure reviewed templates rather than generate arbitrary full-site code. Target 20 templates; check every template visually in its relevant viewport(s), interaction states, and Present mode before marking it ready. Keep a template inventory with screenshots, reviewer, defects and pass/fail evidence. A smaller initial release is only a proposed staging option and does not replace the target of 20.
+- Make the actual generated template configuration/source used for the demo available honestly; never claim it is hidden because of an invented closed-source restriction.
+- Render template screens using an allowed component catalog: text, card, form, table, navigation and button.
 - Allowed actions: local state changes, navigation, demo form submission, and filtering.
 - A later brief revises the UI using stable screen/component IDs. Preserve compatible form, filter and navigation state; reset only removed or incompatible state.
 - Present mode hides builder controls and exposes the generated prototype.
@@ -31,6 +34,8 @@ Example: a fictional studio owner asks for an appointment tool. Start a consente
 - [ ] Microphone denial offers typed input and still reaches a usable preview.
 - [ ] A fictional brief creates at least two navigable screens with a stateful filter/button/form.
 - [ ] Transcript-to-brief-to-spec versions are traceable and stale generation results cannot replace newer output.
+- [ ] The template inventory accounts for all 20 target templates, with visual review evidence and defects resolved before each is marked ready.
+- [ ] The demo exposes or exports its actual generated template configuration/source.
 - [ ] Unknown components/actions and arbitrary scripts are rejected before rendering.
 - [ ] A revision preserves compatible state and a failed revision retains the last good preview.
 - [ ] A new session and a second browser cannot see or mutate another session's data.
@@ -39,7 +44,7 @@ Example: a fictional studio owner asks for an appointment tool. Start a consente
 - [ ] A microphone-independent fixture demo works if service credentials or credits are unavailable.
 
 ## Scope 3: optional stretch
-Only after MVP acceptance: richer components and themes, export of a prototype specification, advertisements, and Agentboxd integration. Confirm each external integration and any cost separately.
+Only after MVP acceptance: richer components and themes, advertisements, and Agentboxd integration. Confirm each external integration and any cost separately.
 
 ## Excluded from this build
 Ambient listening outside an explicitly started session, guaranteed OS background/locked-phone capture, agent speech, native apps, arbitrary generated code execution, per-client deployments, production accounts/payments, unattended cross-provider agent messaging, and automatic deployment or PR merging.

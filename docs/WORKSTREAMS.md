@@ -3,9 +3,9 @@ Each human runs their own authorized AI tool. Roles describe responsibilities, n
 
 | Role | Proposed exclusive implementation directories | Deliverable | Dependency |
 | --- | --- | --- | --- |
-| UI / preview | src/ui/, tests/ui/ | Builder shell, component renderer, Present mode, state reconciliation | Draft UI spec fixture |
+| UI / preview | src/ui/, tests/ui/ | Builder shell, 20-template catalog and visual QA, Present mode, state reconciliation | Draft UI spec fixture |
 | Audio / capture | src/audio/, tests/audio/ | Consent, mic lifecycle, transcript segments, build/pause detection, typed fallback | Transcript contract |
-| Generation | src/generation/, tests/generation/ | Brief extraction, spec validation, provider adapter, deterministic fixture fallback | Brief and UI spec contracts |
+| Generation | src/generation/, tests/generation/ | Brief extraction, template selection/configuration, spec validation, provider adapter, deterministic fixture fallback | Brief and UI spec contracts |
 | Integration / release | src/integration/, src/contracts/, tests/integration/, root config and lockfile | Session orchestration, routes, version checks, secrets boundary, integrated demo | All three modules |
 
 Paths are proposed boundaries for the eventual framework. Only integration edits root configuration, manifests, lockfiles and shared contracts; other owners request changes through a task comment. If scaffolding requires different paths, integration publishes the mapping before implementation.
@@ -24,13 +24,13 @@ No private notes, raw audio, personal transcripts or secrets belong in the publi
 
 ## Copyable handoff prompts
 ### UI agent
-Read docs/SCOPE.md, docs/CONTRACTS.md and docs/fixtures/session.json. Own src/ui/ and tests/ui/ only. Build interactive preview rendering from the fixture, stable-ID state reconciliation and Present mode. Ask integration for shared contract/config changes. Return your branch, changed paths, acceptance evidence, limitations and PR link.
+Read docs/SCOPE.md, docs/CONTRACTS.md and docs/fixtures/session.json. Own src/ui/ and tests/ui/ only. Build interactive preview rendering from reviewed templates and the fixture, stable-ID state reconciliation and Present mode. Target 20 templates and attach visual QA evidence for each. Ask integration for shared contract/config changes. Return your branch, changed paths, acceptance evidence, limitations and PR link.
 
 ### Audio agent
 Read the same documents. Own src/audio/ and tests/audio/ only. Produce transcript events from a continuous explicitly started silent session with manual/spoken build and pause controls, mute/resume and idempotent End and typed fallback. Never transmit before Start. Treat provider credentials as unverified. Return lifecycle evidence and the integration handoff.
 
 ### Generation agent
-Read the same documents. Own src/generation/ and tests/generation/ only. Convert final transcript into a versioned brief and validated allowed-component spec. Provide a deterministic synthetic fixture mode; reject unsupported actions/scripts. Preserve stable IDs across compatible revisions. Return validation evidence and provider requirements without secrets.
+Read the same documents. Own src/generation/ and tests/generation/ only. Convert final transcript into a versioned brief, choose/configure a reviewed template and emit a validated allowed-component spec. Make the actual demo configuration/source available. Provide a deterministic synthetic fixture mode; reject unsupported actions/scripts. Preserve stable IDs across compatible revisions. Return validation evidence and provider requirements without secrets.
 
 ### Integration agent
 Read the same documents and all role handoffs. Own src/integration/, src/contracts/, tests/integration/ and root configuration/lockfiles. Freeze executable schemas with the team, scaffold once, connect modules, enforce per-session isolation/version guards, keep secrets server-side and preserve last-good previews. Verify the MVP acceptance checklist. Prepare deployment instructions; do not deploy or merge without the team's authorized next step.

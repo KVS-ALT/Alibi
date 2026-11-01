@@ -17,6 +17,7 @@ A manual or spoken build event freezes the final transcript snapshot for a new b
 
 UiSpec:
 - sessionId; version: positive integer; basedOnBriefVersion: positive integer.
+- templateId: stable ID from the reviewed template catalog; templateVersion: positive integer. Generated configuration/source must reflect what is actually rendered and be available in the demo.
 - screens: array with stable screen id, title and components.
 - component: stable id, type, properties, actions.
 - type enum: text | card | form | table | navigation | button.

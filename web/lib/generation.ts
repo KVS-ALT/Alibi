@@ -3,17 +3,24 @@ import { z } from "zod";
 import { TemplateId, type Claims, type Hero, type ProjectSection } from "@alibi/shared";
 import { SAMPLE_PORTFOLIO } from "./fixtures";
 
-// LLM tasks for the live pipeline. Each task is one small Featherless call so they can run in parallel
-// and each section can be shown as soon as it lands. Every task validates with zod, retries once with
-// the validation error appended, then falls back to safe defaults. Tasks never throw on bad model output.
+// LLM tasks for the live pipeline. Each task is one small call so they can run in parallel and each
+// section can be shown as soon as it lands. Every task validates with zod, retries once with the
+// validation error appended, then falls back to safe defaults. Tasks never throw on bad model output.
 
-const ENDPOINT = (process.env.LLM_BASE_URL || "https://api.featherless.ai/v1").replace(/\/$/, "") + "/chat/completions";
-const model = () => process.env.FEATHERLESS_MODEL || "Qwen/Qwen2.5-7B-Instruct";
-const apiKey = () => process.env.FEATHERLESS_API_KEY?.trim() || "";
-export const generationConfigured = () => apiKey().length > 0;
+// Any OpenAI-compatible provider. LLM_* wins; FEATHERLESS_* is kept so older env files still work.
+const env = (name: string) => process.env[name]?.trim() || "";
+const provider = () => ({
+  endpoint: (env("LLM_BASE_URL") || "https://api.featherless.ai/v1").replace(/\/$/, "") + "/chat/completions",
+  apiKey: env("LLM_API_KEY") || env("FEATHERLESS_API_KEY"),
+  model: env("LLM_MODEL") || env("FEATHERLESS_MODEL") || "Qwen/Qwen2.5-7B-Instruct",
+  fallbackModel: env("LLM_FALLBACK_MODEL"),
+  reasoningEffort: env("LLM_REASONING_EFFORT"), // e.g. "low" for Gemini thinking models
+});
+export const generationConfigured = () => provider().apiKey.length > 0;
+export const generationModel = () => provider().model;
 
-// Featherless limits concurrent requests per plan; queue beyond this.
-const MAX_CONCURRENT = Math.max(1, Number(process.env.FEATHERLESS_CONCURRENCY) || 4);
+// Providers cap concurrent requests (Featherless by plan units); queue beyond this.
+const MAX_CONCURRENT = Math.max(1, Number(env("LLM_CONCURRENCY") || env("FEATHERLESS_CONCURRENCY")) || 4);
 let running = 0;
 const waiting: (() => void)[] = [];
 async function slot<T>(fn: () => Promise<T>): Promise<T> {
@@ -29,31 +36,49 @@ async function slot<T>(fn: () => Promise<T>): Promise<T> {
 
 type Message = { role: "system" | "user" | "assistant"; content: string };
 
+async function chatOnce(model: string, messages: Message[], opts: { maxTokens: number; json: boolean; timeoutMs: number; signal?: AbortSignal }) {
+  const p = provider();
+  const signal = AbortSignal.any([AbortSignal.timeout(opts.timeoutMs), ...(opts.signal ? [opts.signal] : [])]);
+  const res = await fetch(p.endpoint, {
+    method: "POST",
+    signal,
+    headers: { Authorization: `Bearer ${p.apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages,
+      max_tokens: opts.maxTokens,
+      temperature: 0.4,
+      ...(p.reasoningEffort ? { reasoning_effort: p.reasoningEffort } : {}),
+      ...(opts.json ? { response_format: { type: "json_object" } } : {}),
+    }),
+  });
+  if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
+  const body = (await res.json()) as { choices?: { message?: { content?: string } }[]; usage?: { total_tokens?: number } };
+  const content = body.choices?.[0]?.message?.content;
+  if (typeof content !== "string") throw new Error("LLM returned no content");
+  return { content, tokens: body.usage?.total_tokens ?? 0 };
+}
+
+// On a provider error or timeout (e.g. a 503 from an overloaded model), try the fallback model once.
 async function chat(messages: Message[], opts: { maxTokens: number; json: boolean; timeoutMs: number; signal?: AbortSignal }) {
   return slot(async () => {
-    const signal = AbortSignal.any([AbortSignal.timeout(opts.timeoutMs), ...(opts.signal ? [opts.signal] : [])]);
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      signal,
-      headers: { Authorization: `Bearer ${apiKey()}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: model(),
-        messages,
-        max_tokens: opts.maxTokens,
-        temperature: 0.4,
-        ...(opts.json ? { response_format: { type: "json_object" } } : {}),
-      }),
-    });
-    if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
-    const body = (await res.json()) as { choices?: { message?: { content?: string } }[]; usage?: { total_tokens?: number } };
-    const content = body.choices?.[0]?.message?.content;
-    if (typeof content !== "string") throw new Error("LLM returned no content");
-    return { content, tokens: body.usage?.total_tokens ?? 0 };
+    const { model, fallbackModel } = provider();
+    try {
+      return await chatOnce(model, messages, opts);
+    } catch (err) {
+      if (opts.signal?.aborted || !fallbackModel || fallbackModel === model) throw err;
+      console.warn(`[llm] ${model} failed (${(err as Error).message}); retrying with ${fallbackModel}`);
+      return chatOnce(fallbackModel, messages, opts);
+    }
   });
 }
 
 function stripFences(s: string) {
-  return s.replace(/^\s*```[a-z]*\s*/i, "").replace(/\s*```\s*$/, "").trim();
+  return s
+    .replace(/<thought>[\s\S]*?<\/thought>/gi, "")
+    .replace(/^\s*```[a-z]*\s*/i, "")
+    .replace(/\s*```\s*$/, "")
+    .trim();
 }
 
 export type TaskResult<T> = { value: T; ok: boolean; tokens: number };

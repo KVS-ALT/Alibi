@@ -2,7 +2,7 @@ import 'server-only';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Claims, Portfolio, type Claims as ClaimsData, type Metrics, type Portfolio as PortfolioData } from '@alibi/shared';
 import { db, hasDb } from './db';
-import { extractClaims, generationConfigured, heroFrom, makeMock, pendingSection, projectId, readySection, writeProject } from './generation';
+import { extractClaims, generationConfigured, generationModel, heroFrom, makeMock, pendingSection, projectId, readySection, writeProject } from './generation';
 
 export class LiveHttpError extends Error { constructor(public status:number,public code:string,message:string){super(message);} }
 export interface LiveSession {
@@ -32,7 +32,7 @@ export function getLiveRuntime(){
  };
 }
 export function providerMetadata(){const runtime=getLiveRuntime();return {
- generation:{provider:'featherless',configured:generationConfigured(),enabled:runtime.liveEnabled&&generationConfigured()},
+ generation:{model:generationModel(),configured:generationConfigured(),enabled:runtime.liveEnabled&&generationConfigured()},
  speech:{provider:'speechmatics',transport:'proxy',configured:!!runtime.speechKey,enabled:runtime.speechEnabled},
 };}
 export function storageMode(){return hasDb()?'postgres':'memory';}

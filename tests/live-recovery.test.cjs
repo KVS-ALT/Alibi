@@ -1,35 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const ts = require('typescript');
-const root = path.resolve(__dirname, '..');
-
-// Execute production TypeScript with only external I/O replaced. No live providers.
-function harness(overrides = {}, env = {}) {
-  const cache = new Map(), timers = new Map(); let timerId = 0;
-  const context = vm.createContext({ console, Buffer, URL, Request, Response, TextEncoder, TextDecoder,
-    AbortController, AbortSignal, DOMException, Uint8Array, structuredClone,
-    process: { env }, setTimeout(fn, ms) { const id = ++timerId; timers.set(id, { fn, ms }); return id; },
-    clearTimeout(id) { timers.delete(id); } });
-  function load(relative) {
-    const filename = path.resolve(root, relative);
-    if (cache.has(filename)) return cache.get(filename).exports;
-    const module = { exports: {} }; cache.set(filename, module);
-    const localRequire = name => {
-      if (Object.hasOwn(overrides, name)) return overrides[name];
-      if (name === 'server-only') return {};
-      if (name === '@alibi/shared') return load('shared/schema.ts');
-      if (name.startsWith('.')) return load(path.relative(root, path.resolve(path.dirname(filename), name + '.ts')));
-      return require(name);
-    };
-    const output = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
-    vm.compileFunction(output, ['require', 'module', 'exports'], { parsingContext: context, filename })(localRequire, module, module.exports);
-    return module.exports;
-  }
-  return { load, timers, async tick() { const jobs = [...timers.values()]; timers.clear(); for (const job of jobs) job.fn(); await new Promise(setImmediate); } };
-}
+const { harness } = require('./helpers/harness.cjs');
 const enabled = { ALIBI_LOCAL_PROFILE: 'true', ALIBI_CONTINUOUS_CAPTURE: 'true', LIVE_PROVIDER_CALLS_ENABLED: 'true', TEAM_LIVE_TEST_ENABLED: 'true', FEATHERLESS_API_KEY: 'test-placeholder-key', SPEECHMATICS_API_KEY: 'test-placeholder-key' };
 
 test('continuous local capture works without an expiring one-shot test grant', () => {
@@ -76,6 +47,56 @@ test('generation reports provider rejection without logging response bodies or c
   assert.doesNotMatch(JSON.stringify(diagnostics), /sensitive-provider-body|test-placeholder-key/);
 });
 
+test('offline LARP generation separates cars and CAD with realistic complete fictional details', async () => {
+  const h = harness(), { generatePortfolio } = h.load('web/lib/generation.ts');
+  const result = await generatePortfolio({ transcript: 'I am building a marketplace for discounted cars. On the side I built a CAD tool that helps designers find problems in their models.' }, { apiKey: '', model: '' });
+  const projects = Object.values(result.portfolio.projects);
+  assert.equal(projects.length, 2);
+  assert.ok(projects.some(project => /car|dealer|vehicle/i.test(project.summary)));
+  assert.ok(projects.some(project => /CAD|design|model/i.test(project.summary)));
+  for (const project of projects) {
+    assert.equal(project.highlights.length, 3);
+    assert.equal(project.metrics.length, 3);
+    assert.ok(project.stack.length > 0);
+    assert.match(project.mockHtml, /h-full/);
+  }
+  assert.doesNotMatch(JSON.stringify(result), /TBD|Conversation project|Concept captured/);
+});
+
+test('a slow provider cannot withhold the useful local preview or exceed the generation deadline', async () => {
+  const h = harness(), { generatePortfolio } = h.load('web/lib/generation.ts');
+  const drafts = [];
+  const pending = generatePortfolio({ transcript: 'I built a car marketplace with price alerts.' }, {
+    apiKey: 'test-placeholder-key', model: 'Qwen/Qwen2.5-7B-Instruct',
+    fetcher: () => new Promise(() => {}), onDraft: draft => drafts.push(draft),
+  });
+  await new Promise(setImmediate);
+  assert.equal(drafts.length, 1, 'a local preview must publish before the provider responds');
+  assert.ok(Object.keys(drafts[0].portfolio.projects).length > 0);
+  assert.ok([...h.timers.values()].every(timer => timer.ms < 8000), 'deadline must leave room for batching and browser refresh');
+  await h.tick();
+  const result = await pending;
+  assert.ok(Object.keys(result.portfolio.projects).length > 0);
+});
+
+test('wipe removes the public result and an in-flight build cannot resurrect it', async () => {
+  let finish;
+  const h = harness({ './db': { hasDb: () => false }, './generation': { generatePortfolio: () => new Promise(resolve => { finish = resolve; }) } }, enabled);
+  const sessions = h.load('web/lib/live-sessions.ts');
+  const created = await sessions.createLiveSession(new Request('http://localhost:3005/api/sessions', { method: 'POST' }));
+  const request = new Request('http://localhost:3005', { headers: { cookie: created.cookie.split(';')[0] } });
+  sessions.authorizeSpeechStart(request, created.session);
+  sessions.ingestTranscript(created.session.id, { id: 'one', text: 'I built a car marketplace.', isFinal: true });
+  await h.tick();
+  await sessions.wipeLiveSession(request, created.session.id);
+  finish({ claims: { vibe: 'showcase', skills: [], projects: [] }, portfolio: { templateId: 'showcase', skills: [], projects: {}, contradictions: [] } });
+  await new Promise(setImmediate);
+  assert.equal(await sessions.getPublicPortfolio(created.session.slug), undefined);
+  assert.equal(created.session.segments.size, 0);
+  assert.equal(created.session.active, false);
+  await assert.rejects(sessions.requireOwnedSession(request, created.session.id), { code: 'NOT_FOUND' });
+});
+
 test('continuous proxy accepts more than 30 seconds and releases upstream on explicit End', async () => {
   let socket, sequence = 0, closed = false;
   const h = harness(), { createSpeechmaticsProxy } = h.load('web/lib/speech/proxy.ts');
@@ -111,7 +132,7 @@ test('new speech during generation preserves the completed preview and queues th
   await h.tick();
   assert.equal(session.building, true);
   sessions.ingestTranscript(session.id, { id: 'second', text: 'It helps people buy discounted cars.', isFinal: true });
-  complete({ claims: { vibe: 'showcase', skills: [], projects: [] }, portfolio: { templateId: 'showcase', skills: [], projects: {}, contradictions: [] } });
+  complete({ claims: { vibe: 'showcase', skills: [], projects: [] }, portfolio: { templateId: 'showcase', hero: { name: 'Car builder', handle: 'builder', roles: [], bio: 'A car marketplace.', currently: [] }, skills: [], projects: {}, contradictions: [] } });
   await new Promise(setImmediate);
   assert.equal(session.version, 1, 'completed work must not be discarded when more words arrive');
   assert.equal(session.acceptedRevision, 1);

@@ -10,9 +10,13 @@
     "dev:web": "npm run dev -w web",
     "build:web": "npm run build -w web",
     "start:web": "npm run start -w web",
-    "db:init": "node db/init.mjs"
+    "db:init": "node db/init.mjs",
+    "lint:ui": "lintapple http://127.0.0.1:3005 --ready \"section[aria-label='Microphone controls']\""
   },
   "dependencies": {
     "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "lintapple": "^0.1.24"
   }
 }

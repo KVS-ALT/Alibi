@@ -13,7 +13,7 @@ export function getSpeechProxy() {
     globalThis.__alibiOwnedSpeechProxy = createSpeechmaticsProxy({ enabled: runtime.liveEnabled, liveCallsAllowed: runtime.liveEnabled, ...runtime.limits, maxStartsPerSession: 1 }, {
       tokenProvider,
       createSocket: runtime.liveEnabled ? url => new WebSocket(url) as unknown as ProxySocket : undefined,
-      onSegment: segment => ingestTranscript(segment.sessionId, { id: segment.segmentId, text: segment.text, isFinal: segment.isFinal }),
+      onSegment: segment => ingestTranscript(segment.sessionId, { id: segment.segmentId, text: segment.text, isFinal: segment.isFinal, ...(segment.speaker ? { speaker: segment.speaker } : {}) }),
     });
   }
   return globalThis.__alibiOwnedSpeechProxy;

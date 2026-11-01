@@ -10,6 +10,7 @@ export interface LiveSession {
  portfolio:PortfolioData;claims?:ClaimsData;version:number;active:boolean;error?:string;
  createdAt:number;updatedAt:number;segments:Map<string,string>;revision:number;acceptedRevision:number;
  building:boolean;timer?:ReturnType<typeof setTimeout>;firstDirtyAt?:number;abort?:AbortController;
+ deleted?:boolean;persistence?:Promise<void>;
 }
 interface State {
  sessions:Map<string,LiveSession>;generationAttempts:number;tokenAttempts:number;
@@ -61,9 +62,12 @@ export function providerMetadata(){const runtime=getLiveRuntime();return {
 export function storageMode(){return hasDb()?'postgres':'memory';}
 export function sessionPayload(session:LiveSession){return {id:session.id,slug:session.slug,url:'/p/'+session.slug,status:session.status,portfolio:session.portfolio,version:session.version,error:session.error,active:session.active,storage:storageMode(),providers:providerMetadata()};}
 async function save(session:LiveSession){
- if(!hasDb())return;
- await db().query('insert into sessions (id,slug,transcript,claims,portfolio,metrics) values ($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb) on conflict(id) do update set transcript=excluded.transcript,claims=excluded.claims,portfolio=excluded.portfolio,metrics=excluded.metrics',
-  [session.id,session.slug,conversation(session),session.claims?JSON.stringify(Claims.parse(session.claims)):null,JSON.stringify(Portfolio.parse(session.portfolio)),JSON.stringify({startedAt:session.createdAt,...(session.version?{readyAt:session.updatedAt}:{}),tasks:[],parallelTaskCount:0,version:session.version,active:session.active})]);
+ const pending=(session.persistence??Promise.resolve()).catch(()=>{}).then(async()=>{
+  if(session.deleted||!hasDb())return;
+  await db().query('insert into sessions (id,slug,transcript,claims,portfolio,metrics) values ($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb) on conflict(id) do update set transcript=excluded.transcript,claims=excluded.claims,portfolio=excluded.portfolio,metrics=excluded.metrics',
+   [session.id,session.slug,conversation(session),session.claims?JSON.stringify(Claims.parse(session.claims)):null,JSON.stringify(Portfolio.parse(session.portfolio)),JSON.stringify({startedAt:session.createdAt,...(session.version?{readyAt:session.updatedAt}:{}),tasks:[],parallelTaskCount:0,version:session.version,active:session.active})]);
+ });
+ session.persistence=pending;await pending;
 }
 export async function createLiveSession(request:Request){
  assertOrigin(request);
@@ -74,57 +78,78 @@ export async function createLiveSession(request:Request){
  await save(session);state.sessions.set(session.id,session);
  return {session,cookie:`${OWNER_COOKIE}=${owner}; HttpOnly; SameSite=Strict; Path=/api${continuousCapture()?'':'; Max-Age=1800'}${process.env.NODE_ENV==='production'&&process.env.ALIBI_LOCAL_PROFILE!=='true'?'; Secure':''}`};
 }
-export async function requireOwnedSession(request:Request,id:string){
+export async function requireOwnedSession(request:Request,id:string,allowDeleted=false){
  assertOrigin(request);
- const session=state.sessions.get(id);if(!session||!equal(session.owner,cookie(request,OWNER_COOKIE)))throw new LiveHttpError(404,'NOT_FOUND','Session not found or expired.');return session;
+ const session=state.sessions.get(id);if(!session||session.deleted&&!allowDeleted||!equal(session.owner,cookie(request,OWNER_COOKIE)))throw new LiveHttpError(404,'NOT_FOUND','Session not found or expired.');return session;
+}
+export async function wipeLiveSession(request:Request,id:string,stopCapture?:()=>void){
+ const session=await requireOwnedSession(request,id,true);
+ session.deleted=true;session.abort?.abort();if(session.timer)clearTimeout(session.timer);
+ stopCapture?.();
+ session.active=false;session.segments.clear();session.portfolio={...EMPTY,skills:[],projects:{},contradictions:[]};session.claims=undefined;
+ session.version=0;session.revision=0;session.acceptedRevision=0;session.status='idle';session.error=undefined;
+ // Drain an already-running write before deleting, so an upsert cannot resurrect the result.
+ await session.persistence?.catch(()=>{});
+ if(hasDb())await db().query('delete from sessions where id=$1',[id]);
+ state.sessions.delete(id);
 }
 function grantAllows(session:LiveSession){const grant=state.grant;return getLiveRuntime().liveEnabled&&(continuousCapture()||!!grant&&grant.owner===session.owner&&grant.sessionId===session.id&&Date.now()-grant.startedAt<90000);}
 export function authorizeSpeechStart(request:Request,session:LiveSession){
+ if(session.deleted)throw new LiveHttpError(404,'NOT_FOUND','Session not found or expired.');
  if(!getLiveRuntime().liveEnabled)throw new LiveHttpError(503,'LIVE_DISABLED','The protected live session has not been enabled.');
  if(!continuousCapture()&&(state.grant||!grantTokenValid(cookie(request,TEST_COOKIE))))throw new LiveHttpError(403,'TEST_GRANT_REQUIRED','Use the approved private test link; this one-session allowance may already be used.');
  state.grant={owner:session.owner,sessionId:session.id,startedAt:Date.now()};session.active=true;session.status='listening';session.updatedAt=Date.now();
 }
 export function setSpeechState(id:string,status:'listening'|'idle'){
- const session=state.sessions.get(id);if(!session)return;session.active=status==='listening';session.updatedAt=Date.now();
+ const session=state.sessions.get(id);if(!session||session.deleted)return;session.active=status==='listening';session.updatedAt=Date.now();
  if(!session.building)session.status=session.version?'ready':status;
  if(!session.active&&session.revision>session.acceptedRevision){if(session.timer)clearTimeout(session.timer);void build(session);}
  void save(session).catch(()=>{session.error='Portfolio persistence failed.';});
 }
 export function conversation(session:LiveSession){return [...session.segments.values()].join(' ').replace(/\s+([,.;:!?])/g,'$1').replace(/\s+/g,' ').trim();}
-export function ingestTranscript(id:string,segment:{id:string;text:string;isFinal:boolean}){
- const session=state.sessions.get(id);if(!session||!segment.isFinal||!grantAllows(session)||typeof segment.text!=='string'||!segment.text.trim()||segment.text.length>4000)return;
- if(session.segments.has(segment.id)&&session.segments.get(segment.id)===segment.text.trim())return;
+export function ingestTranscript(id:string,segment:{id:string;text:string;isFinal:boolean;speaker?:string}){
+ const session=state.sessions.get(id);if(!session||session.deleted||!segment.isFinal||!grantAllows(session)||typeof segment.text!=='string'||!segment.text.trim()||segment.text.length>4000)return;
+ const speaker=segment.speaker&&/^(?:S[1-9]\d{0,3}|UU)$/.test(segment.speaker)?`[${segment.speaker}] `:'';
+ const content=speaker+segment.text.trim();
+ if(session.segments.has(segment.id)&&session.segments.get(segment.id)===content)return;
  if(!session.segments.has(segment.id)&&session.segments.size>=128){if(continuousCapture())session.segments.delete(session.segments.keys().next().value!);else return;}
- session.segments.set(segment.id,segment.text.trim());
+ session.segments.set(segment.id,content);
  if(continuousCapture()){while(session.segments.size>1&&conversation(session).length>12000)session.segments.delete(session.segments.keys().next().value!);}
  else if(conversation(session).length>12000){session.segments.delete(segment.id);session.error='Conversation length allowance reached.';return;}
  session.revision++;session.updatedAt=Date.now();session.firstDirtyAt??=Date.now();
- if(session.timer)clearTimeout(session.timer);session.timer=setTimeout(()=>void build(session),Math.min(1500,Math.max(0,6000-(Date.now()-session.firstDirtyAt))));
+ if(session.timer)clearTimeout(session.timer);session.timer=setTimeout(()=>void build(session),Math.min(350,Math.max(0,1000-(Date.now()-session.firstDirtyAt))));
 }
 async function build(session:LiveSession){
- if(session.building||session.revision<=session.acceptedRevision||!grantAllows(session))return;
+ if(session.deleted||session.building||session.revision<=session.acceptedRevision||!grantAllows(session))return;
  if(!continuousCapture()&&state.generationAttempts>=limit('APPROVED_GENERATION_REQUESTS',3)){session.error='The approved inference allowance has been reached. Your last completed portfolio is preserved.';session.status='error';return;}
  session.firstDirtyAt=undefined;const revision=session.revision,transcript=conversation(session),key=process.env.FEATHERLESS_API_KEY;
  if(!key){session.error='Featherless credentials are not configured.';session.status='error';return;}
  session.building=true;session.status='building';session.error=undefined;session.abort=new AbortController();
+ const publish=async(result:{portfolio:PortfolioData;claims:ClaimsData})=>{
+  if(session.deleted)return;
+  const portfolio=Portfolio.parse(result.portfolio),claims=Claims.parse(result.claims);
+  if(JSON.stringify(portfolio)===JSON.stringify(session.portfolio)){session.claims=claims;return;}
+  const prior={portfolio:session.portfolio,claims:session.claims,version:session.version};
+  session.portfolio=portfolio;session.claims=claims;session.version++;session.updatedAt=Date.now();
+  try{await save(session);}catch(error){if(!session.deleted)Object.assign(session,prior);throw error;}
+ };
  try {
-  const result=await generatePortfolio({transcript,previous:session.version?session.portfolio:undefined,signal:session.abort.signal},{apiKey:key,model:process.env.FEATHERLESS_MODEL||'Qwen/Qwen2.5-7B-Instruct',onDiagnostic:event=>console.info('[alibi:generation]',JSON.stringify({revision,...event})),fetcher:async(input,init)=>{
+  const result=await generatePortfolio({transcript,previous:session.version?session.portfolio:undefined,signal:session.abort.signal},{apiKey:key,model:process.env.FEATHERLESS_MODEL||'Qwen/Qwen2.5-7B-Instruct',onDraft:publish,onDiagnostic:event=>console.info('[alibi:generation]',JSON.stringify({revision,...event})),fetcher:async(input,init)=>{
    const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);
    if(url.href!=='https://api.featherless.ai/v1/chat/completions'||!grantAllows(session)||!continuousCapture()&&state.generationAttempts>=limit('APPROVED_GENERATION_REQUESTS',3))throw new Error('Approved inference allowance reached.');
    state.generationAttempts++;return fetch(input,{...init,redirect:'error'});
   }});
   // One build runs per session. Publish this completed snapshot, then catch up
   // with queued words; continuous speech must not discard every completed build.
-  const portfolio=Portfolio.parse(result.portfolio),claims=Claims.parse(result.claims);
-  const prior={portfolio:session.portfolio,claims:session.claims,version:session.version};
-  session.portfolio=portfolio;session.claims=claims;session.version++;session.updatedAt=Date.now();
-  try{await save(session);}catch(error){Object.assign(session,prior);throw error;}
+  if(session.deleted)return;
+  await publish(result);
   session.acceptedRevision=revision;session.status='ready';
- }catch{session.error='The live generation could not finish. Your last completed portfolio is preserved.';session.status='error';}
- finally{session.building=false;session.abort=undefined;if(session.revision>revision&&grantAllows(session)){if(session.timer)clearTimeout(session.timer);session.timer=setTimeout(()=>void build(session),300);}}
+ }catch{if(!session.deleted){session.error='The live generation could not finish. Your last completed portfolio is preserved.';session.status='error';}}
+ finally{session.building=false;session.abort=undefined;if(!session.deleted&&session.revision>revision&&grantAllows(session)){if(session.timer)clearTimeout(session.timer);session.timer=setTimeout(()=>void build(session),300);}}
 }
 export async function getPublicPortfolio(slug:string){
  const session=[...state.sessions.values()].find(item=>item.slug===slug);
+ if(session?.deleted)return undefined;
  if(session)return {portfolio:Portfolio.parse(session.portfolio),ready:session.version>0,active:session.active||session.building,version:session.version,storage:storageMode()};
  if(!hasDb())return undefined;
  const {rows}=await db().query('select portfolio,metrics from sessions where slug=$1',[slug]);if(!rows[0])return undefined;

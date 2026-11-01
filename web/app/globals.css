@@ -5,6 +5,10 @@
   --font-mono: var(--font-geist-mono);
 }
 
+html {
+  background: #fbfafc;
+}
+
 body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }

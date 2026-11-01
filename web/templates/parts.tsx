@@ -98,7 +98,7 @@ export function MockFrame({ html, url, dark = false }: { html: string; url?: str
         <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
         {url && (
           <span
-            className={`ml-3 truncate rounded-md px-2 py-0.5 font-mono text-[10px] ${dark ? "bg-white/5 text-white/50" : "bg-black/5 text-black/50"}`}
+            className={`ml-3 truncate rounded-md px-2 py-0.5 font-mono text-[10px] ${dark ? "bg-white/5 text-white/50" : "bg-black/5 text-black/60"}`}
           >
             {url}
           </span>
@@ -123,11 +123,12 @@ export function MockFrame({ html, url, dark = false }: { html: string; url?: str
   );
 }
 
-// Collapsible region with a height transition, used for the "tap to expand" project details.
+// Unmount collapsed details so they are neither focusable nor clipped visible content.
 export function Expand({ open, children }: { open: boolean; children: React.ReactNode }) {
+  if (!open) return null;
   return (
-    <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-      <div className="overflow-hidden">{children}</div>
+    <div className="animate-[fadein_.3s_ease-out] motion-reduce:animate-none">
+      {children}
     </div>
   );
 }

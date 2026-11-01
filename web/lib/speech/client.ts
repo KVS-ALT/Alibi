@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TranscriptSegment } from './types';
 import type { CaptureSnapshot } from './types';
+import { isSpeakerLabel } from './types';
 import { openSpeechmaticsPcmSource, type PcmSource } from './pcm';
 
 export interface ProxyIdentity { sessionId: string; streamId: string }
@@ -64,8 +65,8 @@ export function createHttpSpeechmaticsProxyTransport(fetcher: typeof fetch = fet
             seen.add(value.id); if (seen.size > 256) seen.delete(seen.values().next().value!);
             if (value.type === 'segment') {
               const segment = value.segment;
-              if (!segment || segment.sessionId !== identity.sessionId || typeof segment.segmentId !== 'string' || segment.segmentId.length > 300 || typeof segment.text !== 'string' || segment.text.length > 50000 || segment.text.includes('\0') || typeof segment.isFinal !== 'boolean') throw new Error(safeError);
-              onEvent({ id: value.id, type: 'segment', segment: { sessionId: segment.sessionId, segmentId: segment.segmentId, text: segment.text, isFinal: segment.isFinal } });
+              if (!segment || segment.sessionId !== identity.sessionId || typeof segment.segmentId !== 'string' || segment.segmentId.length > 300 || typeof segment.text !== 'string' || segment.text.length > 50000 || segment.text.includes('\0') || typeof segment.isFinal !== 'boolean' || segment.speaker !== undefined && !isSpeakerLabel(segment.speaker)) throw new Error(safeError);
+              onEvent({ id: value.id, type: 'segment', segment: { sessionId: segment.sessionId, segmentId: segment.segmentId, text: segment.text, isFinal: segment.isFinal, ...(segment.speaker ? { speaker: segment.speaker } : {}) } });
             } else if (value.type === 'state' && ['active', 'ended'].includes(value.state)) onEvent({ id: value.id, type: 'state', state: value.state, code: typeof value.code === 'string' && /^[a-z_]{1,64}$/.test(value.code) ? value.code : undefined });
             else throw new Error(safeError);
           } catch { broken(); }

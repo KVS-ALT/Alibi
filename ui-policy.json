@@ -1,0 +1,117 @@
+{
+  "fonts": [
+    "Geist",
+    "Geist Fallback",
+    "Geist Mono",
+    "Geist Mono Fallback",
+    "Instrument Serif",
+    "Instrument Serif Fallback",
+    "system-ui",
+    "-apple-system",
+    "BlinkMacSystemFont",
+    "SF Pro Text",
+    "SF Pro Display"
+  ],
+  "fontSizes": [
+    10,
+    11,
+    12,
+    13,
+    14,
+    16,
+    18,
+    20,
+    24,
+    30,
+    32,
+    36,
+    40,
+    48,
+    60,
+    64,
+    72,
+    96
+  ],
+  "typeRules": [
+    {
+      "selector": "h1",
+      "sizes": [
+        24,
+        32,
+        40,
+        48,
+        64,
+        72,
+        96
+      ]
+    },
+    {
+      "selector": "h2",
+      "sizes": [
+        11,
+        12,
+        20,
+        24,
+        32
+      ]
+    },
+    {
+      "selector": "h3",
+      "sizes": [
+        12,
+        14,
+        16,
+        18,
+        20,
+        24
+      ]
+    },
+    {
+      "selector": "section[aria-label=\"Microphone controls\"] button",
+      "sizes": [
+        12,
+        14,
+        16,
+        18,
+        20,
+        24,
+        30
+      ]
+    }
+  ],
+  "minControlSize": 24,
+  "controlSizeRules": [{ "selector": "section[aria-label=\"Microphone controls\"] button, section[aria-label=\"Microphone controls\"] a", "minSize": 44 }],
+  "minControlGap": 8,
+  "minControlInset": 8,
+  "controlContainers": [
+    "[data-ui-container]"
+  ],
+  "contentInsetRules": [],
+  "iconSizeRules": [],
+  "minLayoutGap": 8,
+  "bannedCopy": [
+    "unlock your potential",
+    "seamlessly",
+    "game-changing"
+  ],
+  "viewports": [
+    {
+      "width": 390,
+      "height": 844
+    },
+    {
+      "width": 1440,
+      "height": 900
+    }
+  ],
+  "colorSchemes": [
+    "light"
+  ],
+  "exceptions": [
+    {
+      "selector": "section[aria-label=\"Microphone controls\"] p[role=\"alert\"]",
+      "rules": ["text-contrast"],
+      "reason": "Reviewed 2026-11-01: this fixed panel and its alert have an opaque #fbfafc background with #7e4253 text (7.23:1 contrast). Axe cannot resolve the underlying iframe overlap at phone width; direct visual review and the explicit foreground/background calculation confirm contrast exceeds 4.5:1."
+    }
+  ]
+}

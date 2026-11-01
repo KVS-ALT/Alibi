@@ -9,7 +9,7 @@ import { createReadyCue } from "./readyCue";
 interface SessionInfo { id: string; slug: string; url: string }
 type SessionStatus = "idle" | "listening" | "building" | "ready" | "error";
 const STORAGE_KEY = "portfolio.capture.session";
-const POLL_MS = 1500;
+const POLL_MS = 500;
 function sessionInfo(value: unknown): SessionInfo | null {
  if (!value || typeof value !== "object") return null;
  const data = value as Record<string, unknown>;
@@ -32,10 +32,13 @@ export default function ConversationHome() {
  const [pendingStart, setPendingStart] = useState<string | null>(null);
  const [error, setError] = useState<string | undefined>();
  const [ending, setEnding] = useState(false);
+ const [wiping, setWiping] = useState(false);
+ const [wipeFailed, setWipeFailed] = useState(false);
  const [availability, setAvailability] = useState<"loading" | "ready" | "unavailable">("loading");
  const version = useRef(-1), cueFloor = useRef(-1), userStarted = useRef(false);
  const createdHere = useRef(new Set<string>());
  const request = useRef<AbortController | null>(null);
+ const sessionEpoch = useRef(0), wipingRef = useRef(false);
  const cue = useRef<ReturnType<typeof createReadyCue> | null>(null);
  const capture = useCurrentSpeechCapture({ sessionId: session?.id ?? "", onSegment: () => {} });
  const captureRef = useRef(capture); captureRef.current = capture;
@@ -64,7 +67,7 @@ export default function ConversationHome() {
  }, []);
 
  useEffect(() => {
-  if (!pendingStart || pendingStart !== session?.id) return;
+  if (wipingRef.current || !pendingStart || pendingStart !== session?.id) return;
   setPendingStart(null);
   void Promise.resolve(captureRef.current.start()).catch(() => setError("Microphone capture could not start. Try again."));
  }, [pendingStart, session?.id]);
@@ -74,11 +77,12 @@ export default function ConversationHome() {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const controller = new AbortController();
+  const epoch = sessionEpoch.current;
   version.current = -1; cueFloor.current = createdHere.current.has(session.id) ? 0 : -1;
   async function tick() {
    try {
     const response = await fetch(`/api/sessions/${encodeURIComponent(session!.id)}`, { cache: "no-store", credentials: "same-origin", signal: controller.signal });
-    if (stopped) return;
+    if (stopped || wipingRef.current || epoch !== sessionEpoch.current) return;
     if (response.status === 404 || response.status === 403) {
      setError("This session is no longer available. Start again to continue."); setSession(null);
      try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
@@ -86,7 +90,7 @@ export default function ConversationHome() {
     }
     if (!response.ok) throw new Error("Unable to refresh the preview.");
     const data = await response.json();
-    if (stopped || data.id !== session!.id) return;
+    if (stopped || wipingRef.current || epoch !== sessionEpoch.current || data.id !== session!.id) return;
     if (["idle", "listening", "building", "ready", "error"].includes(data.status)) setStatus(data.status);
     if (typeof data.error === "string") setError(data.error.slice(0, 240));
     else if (data.status !== "error") setError(undefined);
@@ -101,21 +105,23 @@ export default function ConversationHome() {
      }
     }
    } catch {
-    if (!stopped) setError("Connection interrupted. Your preview is kept while reconnecting.");
-   } finally { if (!stopped) timer = setTimeout(tick, POLL_MS); }
+    if (!stopped && !wipingRef.current && epoch === sessionEpoch.current) setError("Connection interrupted. Your preview is kept while reconnecting.");
+   } finally { if (!stopped && !wipingRef.current && epoch === sessionEpoch.current) timer = setTimeout(tick, POLL_MS); }
   }
   void tick();
   return () => { stopped = true; controller.abort(); if (timer) clearTimeout(timer); };
  }, [session]);
 
  const start = useCallback(async () => {
-  if (creating || pendingStart || availability !== "ready") return;
+  if (wipingRef.current || wipeFailed || creating || pendingStart || availability !== "ready") return;
   userStarted.current = true; void cue.current?.unlock(); setError(undefined);
   if (session) { setPendingStart(session.id); return; }
   setCreating(true); const controller = new AbortController(); request.current = controller;
+  const epoch = sessionEpoch.current;
   try {
    const response = await fetch("/api/sessions", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: "{}", signal: controller.signal });
    const data = await response.json();
+   if (controller.signal.aborted || epoch !== sessionEpoch.current) return;
    if (!response.ok) throw new Error(message(data, "Could not start a session. Try again."));
    const next = sessionInfo(data); if (!next) throw new Error("The server returned an invalid session.");
    createdHere.current.add(next.id); setSession(next);
@@ -124,34 +130,64 @@ export default function ConversationHome() {
    setPendingStart(next.id);
   } catch (cause) { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Could not start a session."); }
   finally { if (!controller.signal.aborted) setCreating(false); }
- }, [creating, pendingStart, session, availability]);
+ }, [creating, pendingStart, session, availability, wipeFailed]);
 
  const end = useCallback(async () => {
   if (ending) return;
+  const endingCapture = captureRef.current;
+  const epoch = sessionEpoch.current;
   setEnding(true);
-  try { await captureRef.current.flush(); } catch { /* Capture exposes its safe error message. */ }
-  finally { await captureRef.current.end(); setEnding(false); }
+  try { await endingCapture.flush(); } catch { /* Capture exposes its safe error message. */ }
+  finally { await endingCapture.end(); if (epoch === sessionEpoch.current) setEnding(false); }
  }, [ending]);
 
+ const wipe = useCallback(async () => {
+  if (wipingRef.current) return;
+  wipingRef.current = true; setWiping(true); sessionEpoch.current++;
+  request.current?.abort(); setPendingStart(null); setCreating(false); setEnding(false);
+  userStarted.current = false; setError(undefined);
+  // Wipe stops immediately. Flushing would keep listening and could create more data.
+  captureRef.current.end();
+  try {
+   if (session) {
+    const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE", credentials: "same-origin", signal: AbortSignal.timeout(10_000) });
+    if (!response.ok && response.status !== 404) {
+     const data = await response.json().catch(() => null);
+     throw new Error(message(data, "Could not wipe this session. Recording is stopped; try Wipe again."));
+    }
+   }
+   try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
+   createdHere.current.clear(); version.current = -1; cueFloor.current = -1;
+   setSession(null); setPortfolio(null); setStatus("idle"); setError(undefined); setWipeFailed(false);
+  } catch (cause) {
+   setError(cause instanceof Error ? cause.message : "Could not wipe this session. Recording is stopped; try Wipe again.");
+   // Keep this session ID for a retry. The server may already have tombstoned it,
+   // so resuming its polling could mistake a partial wipe for an expired session.
+   setWipeFailed(true);
+  } finally { wipingRef.current = false; setWiping(false); }
+ }, [session]);
+
  const listening = capture.status === "listening", muted = capture.status === "muted";
- const busy = creating || capture.starting || ending;
+ const busy = creating || capture.starting || ending || wiping;
  const Template = portfolio ? TEMPLATES[portfolio.templateId] : null;
- const label = ending ? "Finishing capture" : busy ? "Connecting" : listening ? "Mute microphone" : muted ? "Resume microphone" : "Start microphone";
- const notice = capture.error || error || (availability === "unavailable" ? "Service not ready." : undefined);
+ const label = wiping ? "Clearing portfolio" : ending ? "Finishing capture" : busy ? "Connecting" : listening ? "Mute microphone" : muted ? "Resume microphone" : "Start microphone";
+ const notice = error || capture.error || (availability === "unavailable" ? "Service not ready." : undefined);
  return (
   <div className="min-h-svh bg-[#fbfafc] text-[#3c3345]">
    {Template && portfolio ? <div className="pb-32"><Template portfolio={portfolio} /></div> : <main aria-label="Conversation preview" className="min-h-svh" />}
    <div className="fixed inset-x-0 bottom-5 z-50 flex justify-center px-4 pb-[env(safe-area-inset-bottom)]">
-    <section aria-label="Microphone controls" className="max-w-full rounded-3xl border border-[#e5e1e8] bg-[#fbfafc] px-5 py-3 text-center">
-     <div className="flex items-center justify-center gap-3">
-      <button type="button" aria-label={label} disabled={busy || (!listening && availability !== "ready")} onClick={() => { if (listening) capture.mute(); else if (muted) void capture.resume(); else void start(); }} className="grid h-12 w-16 place-items-center rounded-full bg-[#63536f] text-white outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a] disabled:opacity-60">
+    <section aria-label="Microphone controls" data-ui-container className="max-w-full rounded-3xl border border-[#e5e1e8] bg-[#fbfafc] px-5 py-3 text-center">
+     <div data-ui-actions className="flex flex-wrap items-center justify-center gap-2">
+      <button type="button" aria-label={label} aria-describedby="capture-microphone-tooltip" disabled={busy || wipeFailed || (!listening && availability !== "ready")} onClick={() => { if (listening) capture.mute(); else if (muted) void capture.resume(); else void start(); }} className="group relative grid h-12 w-16 place-items-center rounded-full bg-[#63536f] text-white outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a] disabled:opacity-60">
        <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1M12 18v4M8 22h8"/>{muted && <path d="M3 3l18 18"/>}</svg>
+       <span id="capture-microphone-tooltip" role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-[#3c3345] px-2 py-1 text-xs text-white group-hover:block group-focus-visible:block">{label}</span>
       </button>
-      {(listening || muted) && <button type="button" aria-label="End listening" disabled={ending} onClick={() => void end()} className="grid h-11 w-11 place-items-center rounded-full border border-[#d5cddd] text-[#63536f] outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a]"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm bg-current"/></button>}
-      {session && portfolio && version.current > 0 && <a href={session.url} target="_blank" rel="noopener noreferrer" className="rounded-full border border-[#d5cddd] px-4 py-3 text-xs text-[#63536f] outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a]">Open portfolio</a>}
+      {(listening || muted) && <button type="button" aria-label="End listening" aria-describedby="capture-end-tooltip" disabled={ending} onClick={() => void end()} className="group relative grid h-11 w-11 place-items-center rounded-full border border-[#d5cddd] text-[#63536f] outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a]"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm bg-current"/><span id="capture-end-tooltip" role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-[#3c3345] px-2 py-1 text-xs text-white group-hover:block group-focus-visible:block">End listening</span></button>}
+      {session && portfolio && version.current > 0 && <a href={session.url} target="_blank" rel="noopener noreferrer" className="grid min-h-11 place-items-center rounded-full border border-[#d5cddd] px-4 py-3 text-xs text-[#63536f] outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a]">Open portfolio</a>}
+      <button type="button" aria-label="Wipe portfolio and transcript" disabled={wiping || (!session && !portfolio && !creating)} onClick={() => void wipe()} className="min-h-11 rounded-full border border-[#d5cddd] px-4 py-3 text-xs text-[#63536f] outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a] disabled:opacity-50">{wiping ? "Wiping…" : "Wipe"}</button>
      </div>
-     <p role="status" className="mt-2 min-h-4 text-xs text-[#74687f]">{ending ? "Finishing" : busy ? "Connecting" : status === "building" ? "Updating preview" : listening ? "Listening" : muted ? "Paused" : availability === "loading" ? "Getting ready" : ""}</p>
-     {notice && <p role="alert" className="mt-2 max-w-sm text-xs leading-relaxed text-[#7e4253]">{notice}</p>}
+     <p role="status" className="mt-2 min-h-4 text-xs text-[#74687f]">{wiping ? "Clearing portfolio" : ending ? "Finishing" : busy ? "Connecting" : status === "building" ? "Updating preview" : listening ? "Listening" : muted ? "Paused" : availability === "loading" ? "Getting ready" : ""}</p>
+     {notice && <p role="alert" className="mt-2 max-w-sm bg-[#fbfafc] text-xs leading-relaxed text-[#7e4253]">{notice}</p>}
     </section>
    </div>
   </div>

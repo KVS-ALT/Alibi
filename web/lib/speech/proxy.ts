@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { TranscriptSegment } from './types';
+import { isSpeakerLabel, type SpeakerLabel, type TranscriptSegment } from './types';
 import type { SpeechmaticsTokenResult } from './token';
 
 export interface ProxySocket {
@@ -38,6 +38,30 @@ interface Stream {
 interface Session { bytes: number; starts: number; stream?: Stream }
 const fail = (code: string): SpeechProxyResult => ({ ok: false, code });
 const positive = (value: number | undefined) => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
+interface SpeakerTurn { text: string; speaker?: SpeakerLabel }
+/** Diarization lives on each word, not on metadata.transcript. Preserve turn order. */
+function transcriptTurns(results: unknown, fallback: unknown): SpeakerTurn[] {
+  const turns: SpeakerTurn[] = [];
+  if (Array.isArray(results)) {
+    for (const result of results) {
+      if (!result || typeof result !== 'object') continue;
+      const alternative = Array.isArray(result.alternatives) ? result.alternatives[0] : undefined;
+      if (!alternative || typeof alternative.content !== 'string' || !alternative.content.trim()) continue;
+      const content = alternative.content.trim();
+      const previous = turns[turns.length - 1];
+      const punctuation = result.type === 'punctuation';
+      const label = alternative.speaker;
+      const speaker: SpeakerLabel | undefined = isSpeakerLabel(label) ? label : punctuation ? previous?.speaker : undefined;
+      // Unlabelled punctuation belongs to the preceding word; it is not a third voice.
+      if (previous && (punctuation || previous.speaker === speaker)) {
+        const attaches = punctuation && !/^[([{]$/.test(content) || /^[.,!?;:%)\]}]/.test(content) || /^['’](?:s|t|re|ve|ll|d|m)$/.test(content) || /[([{]$/.test(previous.text);
+        previous.text += (attaches ? '' : ' ') + content;
+      } else turns.push({ text: content, ...(speaker ? { speaker } : {}) });
+    }
+  }
+  if (!turns.length && typeof fallback === 'string') turns.push({ text: fallback.trim() });
+  return turns;
+}
 
 /** No audio retention, provider credentials in responses, or automatic reconnect. Caps survive stream restarts. */
 export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependencies?: SpeechProxyDependencies) {
@@ -108,30 +132,35 @@ export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependen
         const socket = dependencies!.createSocket!(url.toString()); stream.socket = socket;
         socket.onopen = () => {
           if (stream.phase !== 'starting') return;
-          try { socket.send(JSON.stringify({ message: 'StartRecognition', audio_format: { type: 'raw', encoding: 'pcm_s16le', sample_rate: 16000 }, transcription_config: { language: 'en', enable_partials: true, model: 'enhanced', max_delay: 0.7 } })); }
+          try { socket.send(JSON.stringify({ message: 'StartRecognition', audio_format: { type: 'raw', encoding: 'pcm_s16le', sample_rate: 16000 }, transcription_config: { language: 'en', enable_partials: true, model: 'enhanced', max_delay: 0.7, diarization: 'speaker' } })); }
           catch { finish(stream, 'connection_error'); }
         };
         socket.onmessage = event => {
           if (stream.phase === 'ended') return;
           try {
             if (typeof event.data !== 'string' || event.data.length > 65536) { finish(stream, 'invalid_provider_response'); return; }
-            const value = JSON.parse(event.data) as { message?: string; seq_no?: number; forced?: boolean; metadata?: { transcript?: unknown; start_time?: number; end_time?: number } };
+            const value = JSON.parse(event.data) as { message?: string; seq_no?: number; forced?: boolean; metadata?: { transcript?: unknown; start_time?: number; end_time?: number }; results?: unknown };
             if (value.message === 'RecognitionStarted' && stream.phase === 'starting') {
               stream.phase = 'active'; if (stream.handshake) clearTimeout(stream.handshake);
               stream.resolveReady({ ok: true, streamId: stream.id }); emit(stream, { type: 'state', state: 'active' });
             } else if (value.message === 'AudioAdded' && Number.isSafeInteger(value.seq_no) && value.seq_no! > stream.acknowledged && value.seq_no! <= stream.sent) {
               stream.outstanding.splice(0, value.seq_no! - stream.acknowledged); stream.acknowledged = value.seq_no!; stream.ackWait?.();
             } else if ((value.message === 'AddPartialTranscript' || value.message === 'AddTranscript') && stream.phase === 'active') {
-              const text = value.metadata?.transcript;
-              if (typeof text !== 'string' || text.length > 50000 || text.includes('\0') || stream.token && text.includes(stream.token)) { finish(stream, 'invalid_provider_response'); return; }
-              const isFinal = value.message === 'AddTranscript', key = JSON.stringify([value.metadata?.start_time, value.metadata?.end_time, text]);
+              const turns = transcriptTurns(value.results, value.metadata?.transcript);
+              const text = turns.map(turn => turn.text).join(' ');
+              if (!turns.length || text.length > 50000 || text.includes('\0') || stream.token && text.includes(stream.token)) { finish(stream, 'invalid_provider_response'); return; }
+              const isFinal = value.message === 'AddTranscript', key = JSON.stringify([value.metadata?.start_time, value.metadata?.end_time, turns]);
               if (isFinal && stream.finals.has(key)) return;
               if (!stream.pendingSegment) stream.pendingSegment = `${stream.sessionId}:speechmatics:${stream.id}:${++stream.segmentIndex}`;
-              const segment = { sessionId: stream.sessionId, segmentId: stream.pendingSegment, text: text.trim(), isFinal };
+              const segmentBase = stream.pendingSegment;
               if (isFinal) { stream.finals.add(key); stream.pendingSegment = ''; if (stream.finals.size > 10000) { if (continuous) stream.finals.delete(stream.finals.values().next().value!); else { finish(stream, 'transcript_limit'); return; } } }
-              if (segment.text) {
-                if (segment.isFinal) dependencies?.onSegment?.(segment);
-                emit(stream, { type: 'segment', segment });
+              for (let index = 0; index < turns.length; index++) {
+                const turn = turns[index];
+                const segment: TranscriptSegment = { sessionId: stream.sessionId, segmentId: `${segmentBase}:turn:${index}`, text: turn.text, isFinal, ...(turn.speaker ? { speaker: turn.speaker } : {}) };
+                if (segment.text) {
+                  if (segment.isFinal) dependencies?.onSegment?.(segment);
+                  emit(stream, { type: 'segment', segment });
+                }
               }
             } else if (value.message === 'EndOfUtterance' && value.forced === true) stream.utteranceWait?.();
             else if (value.message === 'Error') finish(stream, 'provider_error');

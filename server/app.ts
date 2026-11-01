@@ -6,6 +6,7 @@ import { createProjectArchive } from '../src/export';
 import { localRunner,parseJobInput,sessionIdSchema,type JobRunner,type PackageResult,type Progress } from './pipeline';
 import { createEmailHandoff,createSourceArchiveAttachment } from './email';
 import { createProviderBudget } from './provider-budget';
+import { createInteractiveGrant } from './interactive-grant';
 import type { createElevenLabsTranscriber } from './elevenlabs';
 import type { publicProviderCapabilities } from './config';
 import type { createSpeechmaticsTokenProvider } from './speechmatics';
@@ -15,7 +16,7 @@ class HttpError extends Error {constructor(public status:number,public code:stri
 type JobEvent={type:'stage';progress:Progress}|{type:'result';result:PackageResult['result']}|{type:'error';code:string;message:string};
 interface Job {id:string;events:JobEvent[];listeners:Set<ServerResponse>;done:boolean;abort:AbortController}
 interface Session {id:string;owner:string;expiresAt:number;jobs:Map<string,Job>;latest?:PackageResult;version:number;speechState?:'active'|'muted'|'ended';speechStreamId?:string}
-export interface ServerOptions {runner?:JobRunner;staticDir?:string;ttlMs?:number;maxSessions?:number;maxActiveJobs?:number;now?:()=>number;secureCookies?:boolean;rateLimit?:number;cookieName?:string;liveCallsAllowed?:boolean;forceLiveCallsDisabled?:boolean;providerCapabilities?:ReturnType<typeof publicProviderCapabilities>;speech?:ReturnType<typeof createElevenLabsTranscriber>;speechmatics?:ReturnType<typeof createSpeechmaticsTokenProvider>;speechProxy?:ReturnType<typeof createSpeechmaticsProxy>;email?:ReturnType<typeof createEmailHandoff>}
+export interface ServerOptions {interactiveTest?:{token:string;expiresAt:number};runner?:JobRunner;staticDir?:string;ttlMs?:number;maxSessions?:number;maxActiveJobs?:number;now?:()=>number;secureCookies?:boolean;rateLimit?:number;cookieName?:string;liveCallsAllowed?:boolean;forceLiveCallsDisabled?:boolean;providerCapabilities?:ReturnType<typeof publicProviderCapabilities>;speech?:ReturnType<typeof createElevenLabsTranscriber>;speechmatics?:ReturnType<typeof createSpeechmaticsTokenProvider>;speechProxy?:ReturnType<typeof createSpeechmaticsProxy>;email?:ReturnType<typeof createEmailHandoff>}
 const constantEqual=(a:string,b:string)=>{const first=Buffer.from(a),second=Buffer.from(b);return first.length===second.length&&timingSafeEqual(first,second);};
 function ownerCookie(req:IncomingMessage,name:string){return req.headers.cookie?.split(';').map(v=>v.trim()).find(v=>v.startsWith(`${name}=`))?.slice(name.length+1)??'';}
 async function readJson(req:IncomingMessage){
@@ -43,6 +44,7 @@ export function createApp(options:ServerOptions={}){
  const liveAllowed=options.liveCallsAllowed===true&&options.forceLiveCallsDisabled!==true;
  const email=liveAllowed&&options.email?options.email:createEmailHandoff();
  const budget=createProviderBudget(now);
+ const grant=options.interactiveTest?createInteractiveGrant(options.interactiveTest,now):undefined;
  const publish=(job:Job,event:JobEvent)=>{job.events.push(event);const payload=`data: ${JSON.stringify(event)}\n\n`;for(const listener of job.listeners){if(listener.writableLength>256*1024){listener.destroy();job.listeners.delete(listener);}else listener.write(payload);}};
  const finish=(job:Job)=>{job.done=true;for(const listener of job.listeners)listener.end();job.listeners.clear();};
  const cleanup=()=>{for(const[id,session]of sessions)if(session.expiresAt<=now()){for(const job of session.jobs.values()){job.abort.abort();finish(job);}options.speech?.endSession(id);options.speechmatics?.cancelSession(id);sessions.delete(id);}for(const[key,value]of rates)if(now()-value.start>60000)rates.delete(key);};
@@ -51,6 +53,13 @@ export function createApp(options:ServerOptions={}){
   res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');res.setHeader('Cache-Control','no-store');
   try{
    cleanup();const url=new URL(req.url??'/',`http://${req.headers.host??'localhost'}`),path=url.pathname;
+   const claim=path.match(/^\/test\/claim\/([a-f0-9]{64})$/);
+   if(claim&&req.method==='GET'){
+    if(!grant?.pending(claim[1]))throw new HttpError(404,'NOT_FOUND','Test link unavailable or expired.');
+    res.setHeader('Referrer-Policy','no-referrer');
+    res.setHeader('Set-Cookie',`${cookieName}_test=${claim[1]}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=600${options.secureCookies?'; Secure':''}`);
+    res.writeHead(303,{Location:'/'});res.end();return;
+   }
    if(path==='/api/health'){const providers=options.providerCapabilities?{...options.providerCapabilities,liveCallsEnabled:liveAllowed,generation:{...options.providerCapabilities.generation,enabled:options.providerCapabilities.generation.provider==='demo'||liveAllowed&&options.providerCapabilities.generation.enabled},speech:{...options.providerCapabilities.speech,enabled:options.providerCapabilities.speech.provider==='browser'||liveAllowed&&options.providerCapabilities.speech.enabled},email:{...options.providerCapabilities.email,enabled:liveAllowed&&options.providerCapabilities.email.enabled}}:undefined;json(res,200,{status:'ok',runner:runner.mode,generator:runner.generator??'Demo generator',storage:'ephemeral-memory',sessionTtlMinutes:ttl/60000,...(providers?{providers}:{})});return;}
    if(path.startsWith('/api/')){
     if(!sameOrigin(req))throw new HttpError(403,'ORIGIN_REJECTED','Same-origin requests only.');
@@ -79,6 +88,7 @@ export function createApp(options:ServerOptions={}){
      if(input.sessionId!==session.id)throw new HttpError(400,'SESSION_MISMATCH','Request belongs to another session.');
      if(input.briefVersion<session.version)throw new HttpError(409,'STALE_BRIEF','This brief is older than the current server version.');
      if([...session.jobs.values()].some(j=>!j.done)||activeJobs>=(options.maxActiveJobs??4))throw new HttpError(409,'BUSY','A build is already active; wait for it to finish.');
+     if(runner.requiresLive&&grant&&!grant.allows(session.owner,session.id))throw new HttpError(403,'TEST_GRANT_REQUIRED','This live test is reserved for its approved browser session.');
      if(runner.requiresLive&&(!liveAllowed||options.providerCapabilities?.generation.enabled===false))throw new HttpError(503,'PROVIDER_DISABLED','The selected generation provider is disabled. No external request was made.');
      if(runner.requiresLive&&!budget.reserve('generation',session.id,key))throw new HttpError(429,'PROVIDER_BUDGET','The bounded generation allowance has been reached.');
      while(session.jobs.size>=5){const first=session.jobs.keys().next().value;if(first)session.jobs.delete(first);}
@@ -94,6 +104,7 @@ export function createApp(options:ServerOptions={}){
     if(route==='speech/events'&&req.method==='GET'){
      const proxy=options.speechProxy,streamId=url.searchParams.get('streamId');
      if(!liveAllowed||!proxy?.isConfigured())throw new HttpError(503,'PROVIDER_DISABLED','Realtime transcription is disabled.');
+     if(grant&&!grant.allows(session.owner,session.id))throw new HttpError(403,'TEST_GRANT_REQUIRED','This stream belongs to the approved test session.');
      if(!streamId||streamId!==session.speechStreamId)throw new HttpError(409,'STALE_STREAM','This speech stream is no longer current.');
      res.writeHead(200,{'Content-Type':'text/event-stream','Connection':'keep-alive','X-Accel-Buffering':'no'});res.flushHeaders();
      const unsubscribe=proxy.subscribe({sessionId:session.id,streamId},event=>{
@@ -113,6 +124,7 @@ export function createApp(options:ServerOptions={}){
      const configured=speechProvider==='speechmatics'?options.speechProxy?.isConfigured():speechProvider==='elevenlabs'&&speech?.isConfigured();
      if(!configured)throw new HttpError(503,'PROVIDER_UNCONFIGURED','Provider transcription is not configured.');
      const operation=speechRoute[1];
+     if(grant&&operation!=='start'&&!grant.allows(session.owner,session.id))throw new HttpError(403,'TEST_GRANT_REQUIRED','This speech stream belongs to the approved test session.');
      if(speechProvider==='speechmatics'){
       const proxy=options.speechProxy!;
       if(operation==='pcm'){
@@ -124,6 +136,7 @@ export function createApp(options:ServerOptions={}){
       if(!raw||typeof raw!=='object'||Array.isArray(raw)||Object.keys(raw).some(name=>!['consented','streamId'].includes(name)))throw new HttpError(400,'INVALID_CONSENT','Invalid speech control request.');
       if(operation==='start'){
        if(raw.consented!==true)throw new HttpError(400,'CONSENT_REQUIRED','Explicit speech consent is required.');
+       if(grant&&!grant.start(ownerCookie(req,`${cookieName}_test`),session.owner,session.id))throw new HttpError(403,'TEST_GRANT_REQUIRED','This test link is expired, already used, or belongs to another browser.');
        const controller=new AbortController();res.on('close',()=>{if(!res.writableEnded)controller.abort();});
        const result=await proxy.start({sessionId:session.id,consented:true,signal:controller.signal});
        if(result.ok){session.speechState='active';session.speechStreamId=result.streamId;}json(res,result.ok?200:422,result);return;

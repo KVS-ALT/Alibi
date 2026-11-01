@@ -21,5 +21,5 @@ export function createConfiguredBackend(config:RuntimeConfig,dependencies:{fetch
  const speechProxy=speechmatics?createSpeechmaticsProxy({enabled:config.speech.enabled,liveCallsAllowed:config.liveCallsAllowed,maxSessionAudioSeconds:Math.min(30,config.approvedRequests.audioSeconds),maxGlobalAudioSeconds:config.approvedRequests.audioSeconds,maxWallMs:config.approvedRequests.audioSeconds>0?Math.min(40000,config.approvedRequests.audioSeconds*1000+10000):0,maxStreams:1,maxStartsGlobal:config.approvedRequests.speechTokens},{tokenProvider:speechmatics,createSocket:config.liveCallsAllowed?dependencies.createSpeechSocket:undefined,now:dependencies.now}):undefined;
  const outbox=config.email.liveGate?(dependencies.emailOutbox??(config.email.outboxPath?createFileEmailOutbox(resolve(process.cwd(),config.email.outboxPath)):undefined)):undefined;
  const email=createConfiguredAgentboxdHandoff(config.email,{fetcher,outbox,now:dependencies.now});
- return {runner,speech,speechmatics,speechProxy,email,liveCallsAllowed:config.liveCallsAllowed,forceLiveCallsDisabled:config.candidate,providerCapabilities:publicProviderCapabilities(config)};
+ return {runner,speech,speechmatics,speechProxy,email,interactiveTest:config.interactiveTest,liveCallsAllowed:config.liveCallsAllowed,forceLiveCallsDisabled:config.candidate,providerCapabilities:publicProviderCapabilities(config)};
 }

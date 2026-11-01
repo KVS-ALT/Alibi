@@ -28,6 +28,8 @@ export function extractSelfIntroduction(text: string): string | undefined {
   const tokens=tail.match(/[\p{L}][\p{L}\p{M}'-]*/gu)??[];
   // Do not skip punctuation/code at the front to manufacture a plausible name.
   const first=tokens[0];if(!first||!tail.startsWith(first))continue;
+  // After "I'm"/"I am" only a capitalized word is a name ("I'm pretty sure" is not). Transcripts capitalize names.
+  if(/^i(?:'m| am)/i.test(match[0])&&!/^\p{Lu}/u.test(first))continue;
   const parts:string[]=[];
   for(const token of tokens){
    if(nonNames.has(token.toLowerCase())||parts.length===4||token.length>40)break;

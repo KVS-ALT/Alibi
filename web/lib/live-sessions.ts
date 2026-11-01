@@ -2,10 +2,10 @@ import 'server-only';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Claims, Portfolio, type Claims as ClaimsData, type Portfolio as PortfolioData } from '@alibi/shared';
 import { db, hasDb } from './db';
-import { DEFAULT_GENERATION_MODEL, generatePortfolio } from './generation';
+import { DEFAULT_GENERATION_MODEL, GENERATION_ENDPOINT, generatePortfolio } from './generation';
 import { applyConversationFacts } from './portfolio-facts';
 import { createDraftPortfolio, renderProjectMock } from './draft';
-import { updateConversationIdentity, type ConversationIdentity } from './conversation-identity';
+import { deriveConversationIdentity, type ConversationIdentity } from './conversation-identity';
 import type { ProjectIdentityRegistry } from './project-identity';
 
 export class LiveHttpError extends Error { constructor(public status:number,public code:string,message:string){super(message);} }
@@ -14,7 +14,7 @@ export interface LiveSession {
  portfolio:PortfolioData;claims?:ClaimsData;version:number;active:boolean;error?:string;
  createdAt:number;updatedAt:number;segments:Map<string,string>;revision:number;acceptedRevision:number;
  building:boolean;timer?:ReturnType<typeof setTimeout>;firstDirtyAt?:number;abort?:AbortController;
- deleted?:boolean;persistence?:Promise<void>;
+ deleted?:boolean;lastBuildAt?:number;persistence?:Promise<void>;
  identity?:ConversationIdentity;projectRegistry?:ProjectIdentityRegistry;
 }
 interface State {
@@ -62,7 +62,7 @@ export function getLiveRuntime(){
  };
 }
 export function providerMetadata(){const runtime=getLiveRuntime();return {
- generation:{provider:'featherless',model:process.env.FEATHERLESS_MODEL||DEFAULT_GENERATION_MODEL,configured:!!process.env.FEATHERLESS_API_KEY?.trim(),enabled:runtime.liveEnabled&&(runtime.continuousCapture||limit('APPROVED_GENERATION_REQUESTS',3)>0)},
+ generation:{provider:process.env.LLM_BASE_URL?'openai-compatible':'featherless',model:generationModel(),configured:!!generationKey(),enabled:runtime.liveEnabled&&(runtime.continuousCapture||limit('APPROVED_GENERATION_REQUESTS',3)>0)},
  speech:{provider:'speechmatics',transport:'proxy',configured:!!process.env.SPEECHMATICS_API_KEY?.trim(),enabled:runtime.liveEnabled&&runtime.limits.maxStartsGlobal>0&&runtime.limits.maxSessionAudioSeconds>0},
 };}
 export function storageMode(){return hasDb()?'postgres':'memory';}
@@ -114,16 +114,20 @@ export function setSpeechState(id:string,status:'listening'|'idle'){
  if(!session.active&&session.revision>session.acceptedRevision){if(session.timer)clearTimeout(session.timer);void build(session);}
  void save(session).catch(()=>{session.error='Portfolio persistence failed.';});
 }
-export function conversation(session:LiveSession){return [...session.segments.values()].join(' ').replace(/\s+([,.;:!?])/g,'$1').replace(/\s+/g,' ').trim();}
+function generationKey(){return process.env.LLM_API_KEY?.trim()||process.env.FEATHERLESS_API_KEY?.trim()||'';}
+function generationModel(){return process.env.LLM_MODEL?.trim()||process.env.FEATHERLESS_MODEL||DEFAULT_GENERATION_MODEL;}
+// Speechmatics finals arrive a word or two at a time; drop repeated speaker tags so each turn reads as sentences.
+export function conversation(session:LiveSession){let previous='';return [...session.segments.values()].map(value=>{const tag=value.match(/^\[(S\d+|UU)\]\s*/);const same=!!tag&&tag[1]===previous;previous=tag?.[1]??'';return same?value.slice(tag![0].length):value;}).join(' ').replace(/\s+([,.;:!?])/g,'$1').replace(/\s+/g,' ').trim();}
 export function ingestTranscript(id:string,segment:{id:string;text:string;isFinal:boolean;speaker?:string}){
  const session=state.sessions.get(id);if(!session||session.deleted||!segment.isFinal||!grantAllows(session)||typeof segment.text!=='string'||!segment.text.trim()||segment.text.length>4000)return;
  const speaker=segment.speaker&&/^(?:S[1-9]\d{0,3}|UU)$/.test(segment.speaker)?`[${segment.speaker}] `:'';
  const content=speaker+segment.text.trim();
  if(session.segments.has(segment.id)&&session.segments.get(segment.id)===content)return;
  const scope=segment.id.match(/:speechmatics:([^:]+):/)?.[1];
- session.identity=updateConversationIdentity(session.identity,{text:segment.text,speaker:segment.speaker,scope});
  if(!session.segments.has(segment.id)&&session.segments.size>=128){if(continuousCapture())session.segments.delete(session.segments.keys().next().value!);else return;}
  session.segments.set(segment.id,content);
+ // Re-derive from whole turns: single-word fragments never contain a full introduction.
+ session.identity=deriveConversationIdentity(conversation(session),session.identity??{scope:scope??'transcript'});
  if(continuousCapture()){while(session.segments.size>1&&conversation(session).length>12000)session.segments.delete(session.segments.keys().next().value!);}
  else if(conversation(session).length>12000){session.segments.delete(segment.id);session.error='Conversation length allowance reached.';return;}
  try{
@@ -137,8 +141,12 @@ export function ingestTranscript(id:string,segment:{id:string;text:string;isFina
 }
 async function build(session:LiveSession){
  if(session.deleted||session.building||session.revision<=session.acceptedRevision||!grantAllows(session))return;
+ // Space out model calls (LLM_MIN_INTERVAL_MS) so word-by-word speech can't exhaust provider rate limits.
+ const gap=Number(process.env.LLM_MIN_INTERVAL_MS)||0,wait=(session.lastBuildAt??0)+gap-Date.now();
+ if(wait>0){if(session.timer)clearTimeout(session.timer);session.timer=setTimeout(()=>void build(session),wait);return;}
+ session.lastBuildAt=Date.now();
  if(!continuousCapture()&&state.generationAttempts>=limit('APPROVED_GENERATION_REQUESTS',3)){session.error='The approved inference allowance has been reached. Your last completed portfolio is preserved.';session.status='error';return;}
- session.firstDirtyAt=undefined;const revision=session.revision,transcript=conversation(session),key=process.env.FEATHERLESS_API_KEY;
+ session.firstDirtyAt=undefined;const revision=session.revision,transcript=conversation(session),key=generationKey();
  if(!key){session.error='Featherless credentials are not configured.';session.status='error';return;}
  session.building=true;session.status='building';session.error=undefined;session.abort=new AbortController();
  const publish=async(incoming:{portfolio:PortfolioData;claims:ClaimsData})=>{
@@ -151,9 +159,9 @@ async function build(session:LiveSession){
   try{await save(session);}catch(error){if(!session.deleted)Object.assign(session,prior);throw error;}
  };
  try {
-  const result=await generatePortfolio({transcript,previous:session.version?session.portfolio:undefined,signal:session.abort.signal,identity:structuredClone(session.identity),projectRegistry:structuredClone(session.projectRegistry)},{apiKey:key,model:process.env.FEATHERLESS_MODEL||DEFAULT_GENERATION_MODEL,onDraft:publish,onDiagnostic:event=>console.info('[alibi:generation]',JSON.stringify({revision,...event})),fetcher:async(input,init)=>{
+  const result=await generatePortfolio({transcript,previous:session.version?session.portfolio:undefined,signal:session.abort.signal,identity:structuredClone(session.identity),projectRegistry:structuredClone(session.projectRegistry)},{apiKey:key,model:generationModel(),onDraft:publish,onDiagnostic:event=>console.info('[alibi:generation]',JSON.stringify({revision,...event})),fetcher:async(input,init)=>{
    const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);
-   if(url.href!=='https://api.featherless.ai/v1/chat/completions'||!grantAllows(session)||!continuousCapture()&&state.generationAttempts>=limit('APPROVED_GENERATION_REQUESTS',3))throw new Error('Approved inference allowance reached.');
+   if(url.href!==GENERATION_ENDPOINT||!grantAllows(session)||!continuousCapture()&&state.generationAttempts>=limit('APPROVED_GENERATION_REQUESTS',3))throw new Error('Approved inference allowance reached.');
    state.generationAttempts++;return fetch(input,{...init,redirect:'error'});
   }});
   // One build runs per session. Publish this completed snapshot, then catch up

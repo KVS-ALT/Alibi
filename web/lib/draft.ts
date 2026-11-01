@@ -55,7 +55,9 @@ export function createDraftPortfolio(transcript: string, previous?: Portfolio,op
  const turns=[...normalized.matchAll(/\[(S\d+|UU)\]\s*([^]*?)(?=\[(?:S\d+|UU)\]|$)/g)];
  const builder=options.builderSpeaker??turns.find(turn=>/\b(?:i(?:'ve|'m)?|we(?:'ve|'re)?)\s+(?:(?:have|am|are|been|basically|currently|just)\s+)*(?:built|building|created|made|developed|working|making|launched|designed|designing)\b/i.test(turn[2]))?.[1];
  const builderText=builder?turns.filter(turn=>turn[1]===builder).map(turn=>turn[2]).join(' '):normalized;
- const clauses=builderText.replace(/\[(?:S\d+|UU)\]\s*/g,'').split(/(?<=[.!?])\s+|(?=\b(?:on the side|separately|another project|a separate project|a different project)\b)/i).filter(part=>!part.trim().endsWith('?'));
+ const clauses=builderText.replace(/\[(?:S\d+|UU)\]\s*/g,'').split(/(?<=[.!?])\s+|(?=\b(?:on the side|separately|another project|a separate project|a different project)\b)/i).filter(part=>!part.trim().endsWith('?'))
+  // The last clause may still be mid-sentence ("an app called lease"); wait for its end punctuation.
+  .filter((part,index,all)=>index<all.length-1||/[.!]\s*$/.test(part));
  const statements=clauses.join(' ');
  const selections:{recipe:Recipe;clause:string}[]=[];
  for(const rawClause of clauses){

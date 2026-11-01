@@ -55,3 +55,13 @@ New domain generator 1115a44 was reviewed through independent executable tests. 
 A thirteenth export security case demonstrated that a separate button with submitDemoForm could bypass required target form validation. Both exported runtimes were fixed in 10a2fc0. The regression is now green. Full independent integration command after those changes: 4 files, 38 tests passed (session 3, preview 2, export/security 13, domain scenarios 20).
 
 Live browser verification on port 3001 found a stale server process returning generic rows after the domain code was built. Integration is restarting it. New domain browser screenshots and form layout checks remain pending; old visual passes are not being counted as new domain verification.
+
+## Fresh canonical browser/domain visual verification
+
+After the server restart, Chrome on http://127.0.0.1:3001/ built Sunday QA with item/category/allergens/price columns and Country sourdough, Chocolate morning bun, and Seeded rye rows. Selecting Pastry reduced the table to Chocolate morning bun alone. The preorder page exposed bake selection, quantity, pickup date, name, and email. An empty required date blocked submission; after entering 2026-12-01, the local-only receipt appeared.
+
+Actually viewed the refreshed six contact sheets for templates 11–20: contact-rest-desktop-0/1.png, contact-rest-mobile-0/1.png, and contact-rest-form-mobile-0/1.png under worktrees/ui/qa. These now visibly contain domain-specific data and forms. All ten desktop layouts, ten mobile layouts, and ten mobile form layouts pass the basic visual check. Longer tables scroll inside their labelled table regions; controls and labels fit the 390px forms. This is visual/interaction QA, not a full accessibility conformance audit.
+
+An additional export identifier-collision regression passes (14/14 export tests): a valid component named screen-contact does not shadow the internal screen template in the current HTML ordering. No defect was observed for that edge case.
+
+The upcoming mobile-first main builder redesign has not yet been reviewed by this report. These results certify the reviewed template/domain views and workflows only, not later shell edits.

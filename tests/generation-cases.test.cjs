@@ -119,7 +119,7 @@ test('a schema-valid partial model update does not erase a previous project', as
   const { generatePortfolio } = h.load('web/lib/generation.ts');
   const result = await generatePortfolio({ transcript: 'I built a CAD review tool called Modelmate.', previous: prior.portfolio }, {
     apiKey: 'test-placeholder-key', model: 'Qwen/Qwen2.5-7B-Instruct',
-    fetcher: async () => Response.json({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(update) } }] }),
+    fetcher: async () => Response.json({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify({claims:update.claims,portfolio:update.portfolio}) } }] }),
   });
   const titles = Object.values(result.portfolio.projects).map(project => project.title);
   assert.equal(titles.length, 2);
@@ -135,7 +135,7 @@ test('executable model markup is rejected in favor of the safe local draft', asy
   const diagnostics = [];
   const result = await generatePortfolio({ transcript: 'I built a car marketplace.' }, {
     apiKey: 'test-placeholder-key', model: 'Qwen/Qwen2.5-7B-Instruct',
-    fetcher: async () => Response.json({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(unsafe) } }] }),
+    fetcher: async () => Response.json({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify({claims:unsafe.claims,portfolio:unsafe.portfolio}) } }] }),
     onDiagnostic: event => diagnostics.push(event),
   });
   assert.ok(Object.keys(result.portfolio.projects).length > 0);

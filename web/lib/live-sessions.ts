@@ -3,6 +3,10 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { Claims, Portfolio, type Claims as ClaimsData, type Portfolio as PortfolioData } from '@alibi/shared';
 import { db, hasDb } from './db';
 import { generatePortfolio } from './generation';
+import { applyConversationFacts } from './portfolio-facts';
+import { createDraftPortfolio } from './draft';
+import { updateConversationIdentity, type ConversationIdentity } from './conversation-identity';
+import type { ProjectIdentityRegistry } from './project-identity';
 
 export class LiveHttpError extends Error { constructor(public status:number,public code:string,message:string){super(message);} }
 export interface LiveSession {
@@ -11,6 +15,7 @@ export interface LiveSession {
  createdAt:number;updatedAt:number;segments:Map<string,string>;revision:number;acceptedRevision:number;
  building:boolean;timer?:ReturnType<typeof setTimeout>;firstDirtyAt?:number;abort?:AbortController;
  deleted?:boolean;persistence?:Promise<void>;
+ identity?:ConversationIdentity;projectRegistry?:ProjectIdentityRegistry;
 }
 interface State {
  sessions:Map<string,LiveSession>;generationAttempts:number;tokenAttempts:number;
@@ -87,6 +92,7 @@ export async function wipeLiveSession(request:Request,id:string,stopCapture?:()=
  session.deleted=true;session.abort?.abort();if(session.timer)clearTimeout(session.timer);
  stopCapture?.();
  session.active=false;session.segments.clear();session.portfolio={...EMPTY,skills:[],projects:{},contradictions:[]};session.claims=undefined;
+ session.identity=undefined;session.projectRegistry=undefined;
  session.version=0;session.revision=0;session.acceptedRevision=0;session.status='idle';session.error=undefined;
  // Drain an already-running write before deleting, so an upsert cannot resurrect the result.
  await session.persistence?.catch(()=>{});
@@ -112,10 +118,17 @@ export function ingestTranscript(id:string,segment:{id:string;text:string;isFina
  const speaker=segment.speaker&&/^(?:S[1-9]\d{0,3}|UU)$/.test(segment.speaker)?`[${segment.speaker}] `:'';
  const content=speaker+segment.text.trim();
  if(session.segments.has(segment.id)&&session.segments.get(segment.id)===content)return;
+ const scope=segment.id.match(/:speechmatics:([^:]+):/)?.[1];
+ session.identity=updateConversationIdentity(session.identity,{text:segment.text,speaker:segment.speaker,scope});
  if(!session.segments.has(segment.id)&&session.segments.size>=128){if(continuousCapture())session.segments.delete(session.segments.keys().next().value!);else return;}
  session.segments.set(segment.id,content);
  if(continuousCapture()){while(session.segments.size>1&&conversation(session).length>12000)session.segments.delete(session.segments.keys().next().value!);}
  else if(conversation(session).length>12000){session.segments.delete(segment.id);session.error='Conversation length allowance reached.';return;}
+ try{
+  const draft=createDraftPortfolio(conversation(session),session.portfolio,{projectRegistry:session.projectRegistry,builderName:session.identity.name,builderSpeaker:session.identity.builderSpeaker});
+  session.projectRegistry=draft.projectRegistry;
+  if(JSON.stringify(draft.portfolio)!==JSON.stringify(session.portfolio)){session.portfolio=draft.portfolio;session.claims=draft.claims;session.version++;session.updatedAt=Date.now();void save(session).catch(()=>{if(!session.deleted)session.error='Portfolio persistence failed.';});}
+ }catch{console.info('[alibi:understanding] draft_update_failed');}
  session.revision++;session.updatedAt=Date.now();session.firstDirtyAt??=Date.now();
  if(session.timer)clearTimeout(session.timer);session.timer=setTimeout(()=>void build(session),Math.min(350,Math.max(0,1000-(Date.now()-session.firstDirtyAt))));
 }
@@ -125,8 +138,9 @@ async function build(session:LiveSession){
  session.firstDirtyAt=undefined;const revision=session.revision,transcript=conversation(session),key=process.env.FEATHERLESS_API_KEY;
  if(!key){session.error='Featherless credentials are not configured.';session.status='error';return;}
  session.building=true;session.status='building';session.error=undefined;session.abort=new AbortController();
- const publish=async(result:{portfolio:PortfolioData;claims:ClaimsData})=>{
+ const publish=async(incoming:{portfolio:PortfolioData;claims:ClaimsData})=>{
   if(session.deleted)return;
+  const result=applyConversationFacts(incoming,session.projectRegistry,session.identity?.name,session.portfolio);
   const portfolio=Portfolio.parse(result.portfolio),claims=Claims.parse(result.claims);
   if(JSON.stringify(portfolio)===JSON.stringify(session.portfolio)){session.claims=claims;return;}
   const prior={portfolio:session.portfolio,claims:session.claims,version:session.version};
@@ -134,7 +148,7 @@ async function build(session:LiveSession){
   try{await save(session);}catch(error){if(!session.deleted)Object.assign(session,prior);throw error;}
  };
  try {
-  const result=await generatePortfolio({transcript,previous:session.version?session.portfolio:undefined,signal:session.abort.signal},{apiKey:key,model:process.env.FEATHERLESS_MODEL||'Qwen/Qwen2.5-7B-Instruct',onDraft:publish,onDiagnostic:event=>console.info('[alibi:generation]',JSON.stringify({revision,...event})),fetcher:async(input,init)=>{
+  const result=await generatePortfolio({transcript,previous:session.version?session.portfolio:undefined,signal:session.abort.signal,identity:structuredClone(session.identity),projectRegistry:structuredClone(session.projectRegistry)},{apiKey:key,model:process.env.FEATHERLESS_MODEL||'Qwen/Qwen2.5-7B-Instruct',onDraft:publish,onDiagnostic:event=>console.info('[alibi:generation]',JSON.stringify({revision,...event})),fetcher:async(input,init)=>{
    const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);
    if(url.href!=='https://api.featherless.ai/v1/chat/completions'||!grantAllows(session)||!continuousCapture()&&state.generationAttempts>=limit('APPROVED_GENERATION_REQUESTS',3))throw new Error('Approved inference allowance reached.');
    state.generationAttempts++;return fetch(input,{...init,redirect:'error'});

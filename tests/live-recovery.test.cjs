@@ -132,9 +132,11 @@ test('new speech during generation preserves the completed preview and queues th
   await h.tick();
   assert.equal(session.building, true);
   sessions.ingestTranscript(session.id, { id: 'second', text: 'It helps people buy discounted cars.', isFinal: true });
+  const visibleVersion=session.version;
   complete({ claims: { vibe: 'showcase', skills: [], projects: [] }, portfolio: { templateId: 'showcase', hero: { name: 'Car builder', handle: 'builder', roles: [], bio: 'A car marketplace.', currently: [] }, skills: [], projects: {}, contradictions: [] } });
   await new Promise(setImmediate);
-  assert.equal(session.version, 1, 'completed work must not be discarded when more words arrive');
+  assert.ok(session.version>=visibleVersion, 'completed work must preserve the already visible local draft');
+  assert.equal(Object.keys(session.portfolio.projects).length,1,'the registered project remains visible');
   assert.equal(session.acceptedRevision, 1);
   assert.equal(session.revision, 2);
   assert.ok(h.timers.size > 0, 'newer words must still be scheduled');

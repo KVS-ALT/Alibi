@@ -1,10 +1,18 @@
 import { Claims, Portfolio, type ProjectSection } from "@alibi/shared";
 import { createDraftPortfolio, renderProjectMock } from './draft';
+import { deriveConversationIdentity, type ConversationIdentity } from './conversation-identity';
+import type { ProjectIdentityRegistry } from './project-identity';
+import { applyConversationFacts } from './portfolio-facts';
+export { applyConversationFacts } from './portfolio-facts';
 
 export interface GenerationInput {
   transcript: string;
   previous?: Portfolio;
   signal?: AbortSignal;
+  identity?: ConversationIdentity;
+  projectRegistry?: ProjectIdentityRegistry;
+  builderName?: string;
+  builderSpeaker?: string;
 }
 export interface GenerationOptions {
   apiKey: string;
@@ -15,21 +23,7 @@ export interface GenerationOptions {
   onDiagnostic?(event: { outcome: 'model' | 'fallback'; reason?: string; status?: number }): void;
   onDraft?(draft: GenerationOutput): void | Promise<void>;
 }
-export interface GenerationOutput { portfolio: Portfolio; claims: Claims }
-
-function retainPreviousProjects(result: GenerationOutput, previous: Portfolio | undefined, draft: GenerationOutput): GenerationOutput {
- const prior=Portfolio.safeParse(previous);if(!prior.success)return result;
- const projects:Record<string,ProjectSection>=Object.create(null);
- for(const [id,project]of Object.entries(prior.data.projects).slice(0,3))projects[id]=draft.portfolio.projects[id]??project;
- for(const [id,project]of Object.entries(result.portfolio.projects)){
-  const existing=Object.keys(projects).find(key=>key===id||projects[key].title.toLowerCase()===project.title.toLowerCase());
-  if(existing)projects[existing]=project;else if(Object.keys(projects).length<3)projects[id]=project;
- }
- result.portfolio.projects=projects;
- result.portfolio.skills=[...new Set([...prior.data.skills,...result.portfolio.skills])].slice(0,16);
- result.claims.projects=Object.entries(projects).map(([id,project])=>({id,name:project.title,saidAbout:result.claims.projects.find(claim=>claim.name.toLowerCase()===project.title.toLowerCase())?.saidAbout??[project.summary]}));
- return {portfolio:Portfolio.parse(result.portfolio),claims:Claims.parse(result.claims)};
-}
+export interface GenerationOutput { portfolio: Portfolio; claims: Claims; projectRegistry?: ProjectIdentityRegistry }
 
 const ENDPOINT = "https://api.featherless.ai/v1/chat/completions";
 const MODEL = "Qwen/Qwen2.5-7B-Instruct";
@@ -81,10 +75,10 @@ function validateOutput(value: unknown, transcript: string): GenerationOutput {
   if (serialized.length > 85000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(serialized)) throw new InvalidModelOutput("Portfolio content is too large or contains control characters.");
   if (portfolio.hero && (portfolio.hero.bio.length > 900 || portfolio.hero.name.length > 100 || portfolio.hero.roles.length > 5 || portfolio.hero.currently.length > 5)) throw new InvalidModelOutput("Hero content exceeds its bounds.");
   const used = new Set<string>(), projects: Record<string, ProjectSection> = Object.create(null);
-  claims.projects = claims.projects.map((claim, index) => {
+  claims.projects = claims.projects.map((claim) => {
     if (!claim.name.trim() || claim.name.length > 100 || claim.saidAbout.length > 8 || claim.saidAbout.some(part => part.length > 1200)) throw new InvalidModelOutput("Project claims exceed their bounds.");
     const entries = Object.entries(portfolio.projects);
-    const source = Object.hasOwn(portfolio.projects, claim.id) && !RESERVED.has(claim.id) ? portfolio.projects[claim.id] : entries.find(([, project]) => project.title.toLowerCase() === claim.name.toLowerCase())?.[1] ?? entries[index]?.[1];
+    const source = Object.hasOwn(portfolio.projects, claim.id) && !RESERVED.has(claim.id) ? portfolio.projects[claim.id] : entries.find(([, project]) => project.title.toLowerCase() === claim.name.toLowerCase())?.[1];
     if (!source) throw new InvalidModelOutput("Every claimed project needs a portfolio section.");
     if (source.title.length > 100 || source.summary.length > 1800 || source.tagline.length > 180 || source.highlights.length !== 3 || source.metrics.length !== 3 || source.stack.length > 10 ||
         source.highlights.some(line => line.length > 400) || source.metrics.some(metric => metric.label.length > 80 || metric.value.length > 80)) throw new InvalidModelOutput("Each project needs three concise highlights and metrics.");
@@ -102,7 +96,8 @@ function validateOutput(value: unknown, transcript: string): GenerationOutput {
     if (project.diagramMermaid && (project.diagramMermaid.length > 1800 || /https?:|javascript:|\bclick\b|%%\s*\{|<\s*[a-z]/i.test(project.diagramMermaid))) delete project.diagramMermaid;
     if (project.repo && !/^[a-zA-Z0-9_.-]{1,60}\/[a-zA-Z0-9_.-]{1,80}$/.test(project.repo)) delete project.repo;
     if (project.award && !transcript.toLowerCase().includes(project.award.toLowerCase())) delete project.award;
-    const id = projectId(claim.name, used);
+    const validId=/^[a-z][a-z0-9_-]{0,79}$/i.test(claim.id)&&!RESERVED.has(claim.id)&&!used.has(claim.id);
+    const id = validId?claim.id:projectId(claim.name, used);used.add(id);
     projects[id] = project;
     return { ...claim, id };
   });
@@ -170,10 +165,14 @@ export async function generatePortfolio(input: GenerationInput, options: Generat
   const deadline = Date.now() + REQUEST_TIMEOUT_MS;
   const transcript = text(String(input.transcript ?? ""), 12000).split(options.apiKey || "\u0000").join("[redacted]");
   const report = (event: Parameters<NonNullable<GenerationOptions['onDiagnostic']>>[0]) => { try { options.onDiagnostic?.(event); } catch {} };
-  const draft = createDraftPortfolio(transcript, input.previous);
+  const identity=input.identity??deriveConversationIdentity(transcript);
+  const builderName=input.builderName??identity.name;
+  const builderSpeaker=input.builderSpeaker??identity.builderSpeaker;
+  const draft = createDraftPortfolio(transcript,input.previous,{projectRegistry:input.projectRegistry,builderName,builderSpeaker});
   await options.onDraft?.(draft);
   input.signal?.throwIfAborted();
   const fallback = (reason: string, status?: number) => { report({ outcome: 'fallback', reason, ...(status !== undefined ? { status } : {}) }); return draft; };
+  if(!Object.keys(draft.portfolio.projects).length)return fallback('no_project');
   if (typeof window !== "undefined" || !options.fetcher || options.model !== MODEL || !/^[^\s\u0000-\u001f]{8,512}$/.test(options.apiKey)) return fallback('not_configured');
   const previous = Portfolio.safeParse(input.previous);
   const previousContext = previous.success ? {
@@ -193,7 +192,8 @@ export async function generatePortfolio(input: GenerationInput, options: Generat
   const system = [
     "ROLE: You are Alibi's live fictional-portfolio writer for a networking LARP. Turn messy conversation into a coherent, specific, believable student-builder portfolio. This is creative simulation, not fact checking. Return only one compact JSON object with exactly claims and portfolio. Never explain your reasoning, ask follow-up questions, browse, or request code/deployment changes.",
     "UNDERSTAND BEFORE WRITING: Infer each product's user, problem, core workflow, and technical solution. Split genuinely different products into separate projects; merge paraphrases and repeated mentions of the same product. A car marketplace and a CAD tool are two projects. Generic greetings, filler, backchannels and unrelated small talk are not projects. Interviewer questions are context, not claims that the interviewer built something. Use speaker labels when supplied; two voices do not automatically mean two products or a shared personal identity.",
-    "EVIDENCE AND CREATIVE GAPS: Explicit statements in the conversation take priority, followed by consistent previous portfolio details. Fill missing product names, implementation choices, sample records, milestones and metrics with plausible fictional details that fit the product. Do not output TBD, N/A, lorem ipsum, Conversation project, or vague concept-captured copy. If only a problem is described, invent the smallest credible product that solves it. Do not claim you searched, verified or found real evidence: no search result is supplied. Keep claims.saidAbout faithful to what was actually said; put creative expansion in portfolio fields.",
+    "EVIDENCE AND CREATIVE GAPS: Spoken personal names and registered project identities are authoritative. Never invent, suggest, or replace a person's name or product name. Copy registered project IDs and names exactly; unnamed projects keep descriptive labels. Fill only implementation choices, sample records, milestones and realistic metrics with plausible fiction. Do not output TBD, N/A, lorem ipsum, Conversation project, or vague concept-captured copy. Do not claim you searched or verified real evidence. Keep claims.saidAbout faithful to what was said; creative expansion belongs in portfolio fields.",
+    "ONE-WAY CONVERSATION: Never ask questions, request confirmation, display prompts or propose extra interface controls. Silently retain the existing interpretation when a phrase may be a mishear, spelling variation or ambiguous reference. New product identity requires clear conversation evidence. Questions from other voices supply context; they are not automatically new products or completed features. Explicit spoken corrections may update the existing identity without changing its internal ID. Confirmed builder identity persists even when an old introduction is absent from the current transcript.",
     "CONTINUITY: Return the complete portfolio, retaining previous projects even when the newest utterance only discusses one. Reuse existing project IDs, names, stack and metric values unless a clear correction or meaningful update warrants a change. Resolve explicit corrections using the latest statement. Never silently combine contradictory products, rename everything, reset unrelated projects, or invent a new identity. Keep at most three distinct projects and sixteen skills. Preserve the existing template unless a clear style preference changes it.",
     "REALISM: Write like a capable student explaining concrete engineering choices. Use prototype-scale adoption and domain-specific metrics: a small pilot, dozens of records, a few testers, measured latency, task time or processing throughput. Match units and arithmetic; keep the same numbers across summary and metrics. Prefer a specific implemented workflow over buzzwords. No invented funding rounds, major-brand customers, professional certifications, awards or real-person affiliations. Omit unstated awards, contact emails and personal names; hero.name is Your portfolio when no name was supplied. An explicit self-introduction may set the name; mentioning someone else's name must not.",
     "OUTPUT CONTRACT: claims={speakerName?,role?,vibe:lowercase|showcase|geist,skills:string[],projects:[{id,name,saidAbout:string[]}],contactEmail?}. portfolio={templateId:claims.vibe,hero:{name,handle,roles:string[],bio,currently:string[],location?},skills:string[],projects:{id:ProjectSection},contradictions:string[]}. Every claim id must match its portfolio key. ProjectSection={status:ready,title,category,year,tagline,summary,highlights:[exactly three strings],metrics:[exactly three {label,value} objects],stack:string[]}. Use the current example year unless the speaker provides another plausible year. IDs are short lowercase hyphenated slugs. Keep summary under 500 characters, each highlight under 120, each tagline under 100, stack at most five items, hero.bio under 180, currently at most two items. No extra keys.",
@@ -202,7 +202,7 @@ export async function generatePortfolio(input: GenerationInput, options: Generat
   ].join(" ");
   const messages: { role: string; content: string }[] = [
     { role: "system", content: system + "\nVALID EXAMPLE:\n" + encoded(example) },
-    { role: "user", content: "<<<UNTRUSTED_TRANSCRIPT_JSON>>>\n" + encoded(transcript) + "\n<<<END_UNTRUSTED_TRANSCRIPT_JSON>>>\n<<<PREVIOUS_CONTEXT_JSON>>>\n" + encoded(previousContext ?? null) + "\n<<<END_PREVIOUS_CONTEXT_JSON>>>" },
+    { role: "user", content: "<<<UNTRUSTED_TRANSCRIPT_JSON>>>\n" + encoded(transcript) + "\n<<<END_UNTRUSTED_TRANSCRIPT_JSON>>>\n<<<PREVIOUS_CONTEXT_JSON>>>\n" + encoded(previousContext ?? null) + "\n<<<END_PREVIOUS_CONTEXT_JSON>>>\n<<<REGISTERED_IDENTITIES_JSON>>>\n"+encoded({builderName,projects:draft.projectRegistry?.projects.map(({id,name,nameSource})=>({id,name,nameSource}))})+"\n<<<END_REGISTERED_IDENTITIES_JSON>>>" },
   ];
   for (let attempt = 0; attempt < 2; attempt++) {
     input.signal?.throwIfAborted();
@@ -211,7 +211,7 @@ export async function generatePortfolio(input: GenerationInput, options: Generat
     const payload = JSON.stringify({ model: MODEL, max_tokens: MAX_OUTPUT_TOKENS, temperature: 0.1, stream: false, response_format: { type: "json_object" }, messages });
     if (new TextEncoder().encode(payload).byteLength > MAX_REQUEST_BYTES) return fallback('request_size');
     try {
-      const result = retainPreviousProjects(validateOutput(await requestOnce(payload, options, input.signal, remaining), transcript), input.previous, draft);
+      const result = applyConversationFacts(validateOutput(await requestOnce(payload, options, input.signal, remaining), transcript),draft.projectRegistry,builderName,draft.portfolio);
       input.signal?.throwIfAborted();
       report({ outcome: 'model' });
       return result;

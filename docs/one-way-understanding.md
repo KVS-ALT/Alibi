@@ -1,0 +1,11 @@
+# Silent conversation understanding
+
+The user selected name memory and stable project identity, with no extra UI or questions from the AI. The existing portfolio is the output; no confirmation cards, chips, dialogs, correction forms, or speaker selectors were added.
+
+Personal identity is captured from explicit self-introductions and remembered independently of projects and the rolling transcript. Full names, common introduction forms, Unicode names, and explicit spoken corrections are supported. Speaker candidates are scoped to the upstream stream ID; the builder is resolved from substantive first-person project claims rather than assuming S1 is the owner. A remembered name survives reconnects without giving a newly recycled speaker label somebody else's identity.
+
+Project identities have stable internal IDs, spoken/descriptive name provenance, aliases, purpose context, and an active-project reference. Unnamed products use descriptive labels. Similar spellings and likely mishears merge conservatively; clearly separate product statements may create separate IDs even within one category. Spoken renames update the existing ID. Ambiguous references retain the last supported interpretation.
+
+Each accepted final segment updates identity and a local draft while an AI request may still be pending. Publication applies the current name and project registry again. The AI can enrich registered projects with realistic fictional implementation details, but cannot establish a personal name, invent a canonical product brand, inject an unregistered project, or roll back a newer spoken identity with an older response. Wipe clears the identity and project registry as well as the portfolio and transcript.
+
+Offline behavioral tests cover names before projects, rolling transcript eviction, interviewer introductions, stream scoping, aliases, same-category products, spoken renames, stale AI results, and Wipe. These checks do not establish real microphone transcription or overlapping-speaker accuracy.

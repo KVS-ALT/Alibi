@@ -43,10 +43,11 @@ function assertOrigin(request:Request){
  }
 }
 function expiry(){return Date.parse(process.env.INTERACTIVE_TEST_EXPIRES_AT??'');}
-function grantConfigured(){return /^[a-f0-9]{64}$/.test(process.env.INTERACTIVE_TEST_TOKEN_SHA256??'')&&Number.isFinite(expiry())&&expiry()>Date.now();}
+function unlimitedUsage(){return process.env.ALIBI_UNLIMITED_USAGE==='true';}
+function grantConfigured(){return /^[a-f0-9]{64}$/.test(process.env.INTERACTIVE_TEST_TOKEN_SHA256??'')&&(unlimitedUsage()||Number.isFinite(expiry())&&expiry()>Date.now());}
 function grantTokenValid(token:string){return grantConfigured()&&/^[a-f0-9]{64}$/.test(token)&&timingSafeEqual(hash(token),Buffer.from(process.env.INTERACTIVE_TEST_TOKEN_SHA256!,'hex'));}
 function limit(name:string,max:number){const value=Number(process.env[name]??0);return Number.isSafeInteger(value)&&value>0?Math.min(value,max):0;}
-function continuousCapture(){return process.env.ALIBI_LOCAL_PROFILE==='true'&&process.env.ALIBI_CONTINUOUS_CAPTURE==='true';}
+function continuousCapture(){return unlimitedUsage()||process.env.ALIBI_LOCAL_PROFILE==='true'&&process.env.ALIBI_CONTINUOUS_CAPTURE==='true';}
 export function getLiveRuntime(){
  const continuous=continuousCapture();
  const liveEnabled=process.env.LIVE_PROVIDER_CALLS_ENABLED==='true'&&process.env.TEAM_LIVE_TEST_ENABLED==='true'&&(continuous||grantConfigured());
@@ -103,6 +104,7 @@ function grantAllows(session:LiveSession){const grant=state.grant;return getLive
 export function authorizeSpeechStart(request:Request,session:LiveSession){
  if(session.deleted)throw new LiveHttpError(404,'NOT_FOUND','Session not found or expired.');
  if(!getLiveRuntime().liveEnabled)throw new LiveHttpError(503,'LIVE_DISABLED','The protected live session has not been enabled.');
+ if(unlimitedUsage()&&!grantTokenValid(cookie(request,TEST_COOKIE)))throw new LiveHttpError(403,'TEST_GRANT_REQUIRED','Open your private demo link before starting.');
  if(!continuousCapture()&&(state.grant||!grantTokenValid(cookie(request,TEST_COOKIE))))throw new LiveHttpError(403,'TEST_GRANT_REQUIRED','Use the approved private test link; this one-session allowance may already be used.');
  state.grant={owner:session.owner,sessionId:session.id,startedAt:Date.now()};session.active=true;session.status='listening';session.updatedAt=Date.now();
 }
@@ -172,6 +174,6 @@ export async function getPublicPortfolio(slug:string){
 }
 export function claimInteractiveTest(token:string){
  if(!grantTokenValid(token))throw new LiveHttpError(404,'NOT_FOUND','Test link unavailable or expired.');
- return `${TEST_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=900${process.env.NODE_ENV==='production'&&process.env.ALIBI_LOCAL_PROFILE!=='true'?'; Secure':''}`;
+ return `${TEST_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/api${unlimitedUsage()?'':'; Max-Age=900'}${process.env.NODE_ENV==='production'&&process.env.ALIBI_LOCAL_PROFILE!=='true'?'; Secure':''}`;
 }
 export function routeError(error:unknown){return Response.json({error:{code:error instanceof LiveHttpError?error.code:'UNAVAILABLE',message:error instanceof LiveHttpError?error.message:'The request could not be completed.'}},{status:error instanceof LiveHttpError?error.status:503,headers:{'Cache-Control':'no-store'}});}

@@ -22,6 +22,20 @@ const EMPTY:PortfolioData={templateId:'showcase',skills:[],projects:{},contradic
 const hash=(value:string)=>createHash('sha256').update(value,'utf8').digest();
 function cookie(request:Request,name:string){return request.headers.get('cookie')?.split(';').map(part=>part.trim()).find(part=>part.startsWith(name+'='))?.slice(name.length+1)??'';}
 function equal(a:string,b:string){const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);}
+function assertOrigin(request:Request){
+ if(request.headers.get('sec-fetch-site')==='cross-site')throw new LiveHttpError(403,'ORIGIN_REJECTED','Same-origin requests only.');
+ const raw=request.headers.get('origin');if(!raw)return;
+ let origin:URL;try{origin=new URL(raw);}catch{throw new LiveHttpError(403,'ORIGIN_REJECTED','Same-origin requests only.');}
+ // Next's internal request.url can use localhost even when the browser uses 127.0.0.1.
+ // Host is supplied by the actual HTTP request; never trust an arbitrary forwarded-host header.
+ const host=request.headers.get('host')?.toLowerCase();
+ if(!host||origin.host.toLowerCase()!==host||!['http:','https:'].includes(origin.protocol)||origin.username||origin.password)throw new LiveHttpError(403,'ORIGIN_REJECTED','Same-origin requests only.');
+ if(process.env.ALIBI_LOCAL_PROFILE==='true'&&!['127.0.0.1','localhost','[::1]'].includes(origin.hostname))throw new LiveHttpError(403,'ORIGIN_REJECTED','Use the local test hostname.');
+ if(process.env.NODE_ENV==='production'&&process.env.ALIBI_LOCAL_PROFILE!=='true'){
+  if(origin.protocol!=='https:')throw new LiveHttpError(403,'ORIGIN_REJECTED','Use the secure public site.');
+  if(process.env.RENDER_EXTERNAL_URL&&origin.origin!==new URL(process.env.RENDER_EXTERNAL_URL).origin)throw new LiveHttpError(403,'ORIGIN_REJECTED','Use the configured public site.');
+ }
+}
 function expiry(){return Date.parse(process.env.INTERACTIVE_TEST_EXPIRES_AT??'');}
 function grantConfigured(){return /^[a-f0-9]{64}$/.test(process.env.INTERACTIVE_TEST_TOKEN_SHA256??'')&&Number.isFinite(expiry())&&expiry()>Date.now();}
 function grantTokenValid(token:string){return grantConfigured()&&/^[a-f0-9]{64}$/.test(token)&&timingSafeEqual(hash(token),Buffer.from(process.env.INTERACTIVE_TEST_TOKEN_SHA256!,'hex'));}
@@ -50,7 +64,7 @@ async function save(session:LiveSession){
   [session.id,session.slug,conversation(session),session.claims?JSON.stringify(Claims.parse(session.claims)):null,JSON.stringify(Portfolio.parse(session.portfolio)),JSON.stringify({startedAt:session.createdAt,...(session.version?{readyAt:session.updatedAt}:{}),tasks:[],parallelTaskCount:0,version:session.version,active:session.active})]);
 }
 export async function createLiveSession(request:Request){
- const origin=request.headers.get('origin');if(origin&&new URL(origin).host!==new URL(request.url).host)throw new LiveHttpError(403,'ORIGIN_REJECTED','Same-origin requests only.');
+ assertOrigin(request);
  for(const[id,session]of state.sessions)if(Date.now()-session.updatedAt>30*60*1000&&!session.building){if(session.timer)clearTimeout(session.timer);state.sessions.delete(id);}
  if(state.sessions.size>=100)throw new LiveHttpError(503,'CAPACITY','Session capacity reached.');
  let owner=cookie(request,OWNER_COOKIE);if(!/^[a-f0-9]{64}$/.test(owner))owner=randomBytes(32).toString('hex');
@@ -59,7 +73,7 @@ export async function createLiveSession(request:Request){
  return {session,cookie:`${OWNER_COOKIE}=${owner}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=1800${process.env.NODE_ENV==='production'&&process.env.ALIBI_LOCAL_PROFILE!=='true'?'; Secure':''}`};
 }
 export async function requireOwnedSession(request:Request,id:string){
- const origin=request.headers.get('origin');if(origin&&new URL(origin).host!==new URL(request.url).host)throw new LiveHttpError(403,'ORIGIN_REJECTED','Same-origin requests only.');
+ assertOrigin(request);
  const session=state.sessions.get(id);if(!session||!equal(session.owner,cookie(request,OWNER_COOKIE)))throw new LiveHttpError(404,'NOT_FOUND','Session not found or expired.');return session;
 }
 function grantAllows(session:LiveSession){const grant=state.grant;return getLiveRuntime().liveEnabled&&!!grant&&grant.owner===session.owner&&grant.sessionId===session.id&&Date.now()-grant.startedAt<90000;}

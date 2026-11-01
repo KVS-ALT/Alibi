@@ -4,6 +4,7 @@ const fs = require('node:fs');
 (async () => {
  const { checkPage } = await import('lintapple');
  const policy = JSON.parse(fs.readFileSync('ui-policy.json', 'utf8'));
+ fs.mkdirSync('ui-qa',{recursive:true});
  const browser = await chromium.launch({channel:'chrome',headless:true});
  const results=[];
  try {
@@ -39,6 +40,8 @@ const fs = require('node:fs');
  }
  assert.equal((await (await browser.newPage()).request.get('http://127.0.0.1:3012/p/no-such-portfolio/project/no-project')).status(),404);
  fs.mkdirSync('ui-qa',{recursive:true});fs.writeFileSync('ui-qa/project-apps.json',JSON.stringify(results,null,2));
+ const findings=results.flatMap(({viewport,state,report})=>report.findings.map(finding=>({width:viewport.width,state,...finding})));
+ assert.deepEqual(findings,[], 'Project app lintapple findings; see ui-qa/project-apps.json');
  console.log(JSON.stringify(results.map(({viewport,state,report})=>({viewport,state,report})),null,2));
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

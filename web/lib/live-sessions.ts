@@ -23,6 +23,13 @@ function envInt(name:string,fallback:number){const value=Number(process.env[name
 
 // Usage caps are per session and configurable; defaults comfortably cover a demo and rehearsals.
 const MAX_BUILDS_PER_SESSION=()=>envInt('MAX_BUILDS_PER_SESSION',30);
+// Compare with the Host header the browser actually used; Next's request.url says "localhost" even
+// when the page was opened at 127.0.0.1, which rejected every request from that address.
+function assertSameOrigin(request:Request){
+ const origin=request.headers.get('origin');if(!origin)return;
+ let host:string;try{host=new URL(origin).host;}catch{throw new LiveHttpError(403,'ORIGIN_REJECTED','Same-origin requests only.');}
+ if(host.toLowerCase()!==request.headers.get('host')?.toLowerCase())throw new LiveHttpError(403,'ORIGIN_REJECTED','Same-origin requests only.');
+}
 export function getLiveRuntime(){
  const liveEnabled=process.env.LIVE_PROVIDER_CALLS_ENABLED==='true';
  const speechEnabled=liveEnabled&&process.env.SPEECHMATICS_ENABLED!=='false'&&!!process.env.SPEECHMATICS_API_KEY?.trim();
@@ -43,7 +50,7 @@ async function save(session:LiveSession){
   [session.id,session.slug,conversation(session),session.claims?JSON.stringify(Claims.parse(session.claims)):null,JSON.stringify(Portfolio.parse(session.portfolio)),JSON.stringify({...session.metrics,version:session.version,active:session.active})]);
 }
 export async function createLiveSession(request:Request){
- const origin=request.headers.get('origin');if(origin&&new URL(origin).host!==new URL(request.url).host)throw new LiveHttpError(403,'ORIGIN_REJECTED','Same-origin requests only.');
+ assertSameOrigin(request);
  for(const[id,session]of state.sessions)if(Date.now()-session.updatedAt>2*60*60*1000&&!session.building){if(session.timer)clearTimeout(session.timer);state.sessions.delete(id);}
  if(state.sessions.size>=200)throw new LiveHttpError(503,'CAPACITY','Session capacity reached.');
  let owner=cookie(request,OWNER_COOKIE);if(!/^[a-f0-9]{64}$/.test(owner))owner=randomBytes(32).toString('hex');
@@ -53,7 +60,7 @@ export async function createLiveSession(request:Request){
  return {session,cookie:`${OWNER_COOKIE}=${owner}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=7200${process.env.NODE_ENV==='production'&&process.env.ALIBI_LOCAL_PROFILE!=='true'?'; Secure':''}`};
 }
 export async function requireOwnedSession(request:Request,id:string){
- const origin=request.headers.get('origin');if(origin&&new URL(origin).host!==new URL(request.url).host)throw new LiveHttpError(403,'ORIGIN_REJECTED','Same-origin requests only.');
+ assertSameOrigin(request);
  const session=state.sessions.get(id);if(!session||!equal(session.owner,cookie(request,OWNER_COOKIE)))throw new LiveHttpError(404,'NOT_FOUND','Session not found or expired.');return session;
 }
 export function authorizeSpeechStart(_request:Request,session:LiveSession){
@@ -77,6 +84,12 @@ export function ingestTranscript(id:string,segment:{id:string;text:string;isFina
  if(session.timer)clearTimeout(session.timer);session.timer=setTimeout(()=>void build(session),Math.min(1500,Math.max(0,6000-(Date.now()-session.firstDirtyAt))));
 }
 
+// "Lease" then "Lease Lens": a name that extends (or is extended by) an existing project is the same project.
+function matchProjectId(session:LiveSession,name:string){
+ const key=(v:string)=>v.toLowerCase().replace(/[^a-z0-9]/g,'');const n=key(name);
+ for(const [id,project] of Object.entries(session.portfolio.projects)){const t=key(project.title);if(t&&n&&(n.startsWith(t)||t.startsWith(n)))return id;}
+ return projectId(name);
+}
 async function timed<T extends {ok:boolean}>(session:LiveSession,name:string,run:()=>Promise<T>):Promise<T>{
  const started=Date.now();
  try{const result=await run();session.metrics.tasks.push({name,ms:Date.now()-started,ok:result.ok});return result;}
@@ -93,7 +106,9 @@ async function build(session:LiveSession){
  if(session.building||session.revision<=session.acceptedRevision||!providerMetadata().generation.enabled)return;
  if(session.builds>=MAX_BUILDS_PER_SESSION()){session.error='Build limit for this session reached. Your last portfolio is preserved.';return;}
  session.builds++;session.firstDirtyAt=undefined;
- const revision=session.revision,transcript=conversation(session);
+ // While the mic is live, the last sentence may be half-spoken ("an app called lease"); build from complete ones.
+ const full=conversation(session),cut=session.active?full.slice(0,Math.max(...['.','!','?'].map(c=>full.lastIndexOf(c)))+1):full;
+ const revision=session.revision,transcript=cut.trim()||full;
  session.building=true;session.status='building';session.error=undefined;session.abort=new AbortController();
  const signal=session.abort.signal;
  try{
@@ -101,7 +116,7 @@ async function build(session:LiveSession){
   const claims=Claims.parse({
    ...(extracted.speakerName?{speakerName:extracted.speakerName}:{}),...(extracted.role?{role:extracted.role}:{}),
    vibe:session.claims?.vibe??extracted.vibe,skills:extracted.skills,
-   projects:extracted.projects.map(p=>({id:projectId(p.name),name:p.name,saidAbout:p.saidAbout,platform:p.platform})),
+   projects:extracted.projects.map(p=>({id:matchProjectId(session,p.name),name:p.name,saidAbout:p.saidAbout,platform:p.platform})),
    ...(extracted.contactEmail&&transcript.toLowerCase().includes(extracted.contactEmail.toLowerCase())?{contactEmail:extracted.contactEmail}:{}),
   });
   session.claims=claims;
@@ -109,6 +124,8 @@ async function build(session:LiveSession){
   const handle=hero?.handle??'builder';
   // Claims are pinned: keep sections we already built, add new ones as pending skeletons.
   const projects={...session.portfolio.projects};
+  // A longer spoken name for a known project replaces the clipped one ("Lease" -> "Lease Lens").
+  for(const p of claims.projects){const cur=projects[p.id];if(cur&&cur.title!==p.name&&p.name.length>cur.title.length)projects[p.id]={...cur,title:p.name};}
   const todo=claims.projects.filter(p=>!projects[p.id]&&!session.generatedFrom.has(p.id));
   for(const p of todo)if(!projects[p.id])projects[p.id]=pendingSection(p.name);
   await publish(session,{templateId:claims.vibe,...(hero?{hero}:{}),skills:claims.skills.length?claims.skills:session.portfolio.skills,projects,contradictions:extracted.contradictions});

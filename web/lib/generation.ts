@@ -170,7 +170,11 @@ export async function extractClaims(transcript: string, previous: Claims | undef
     currently: [],
     contradictions: [],
   };
-  return jsonTask(Extracted, [{ role: "system", content: system }, { role: "user", content: user }], fallback, { maxTokens: 700, timeoutMs: 30_000, signal });
+  const result = await jsonTask(Extracted, [{ role: "system", content: system }, { role: "user", content: user }], fallback, { maxTokens: 1400, timeoutMs: 30_000, signal });
+  // Models read any "app" as mobile; only keep mobile-app when the speaker actually said so.
+  const saidMobile = /\b(ios|android|iphone|ipad|mobile|phone app|app store|play store|swift|swiftui|react native|flutter)\b/i.test(transcript);
+  for (const p of result.value.projects) if (p.platform === "mobile-app" && !saidMobile) p.platform = "web-app";
+  return result;
 }
 
 export function heroFrom(x: Extracted): Hero | undefined {
@@ -198,7 +202,7 @@ const Card = z.object({
     .array(z.object({ label: str(30), value: z.coerce.string().transform((s) => s.slice(0, 16)) }))
     .catch([])
     .transform((a) => a.filter((m) => !/million|billion|\d\s*[mb]\b/i.test(m.value)).slice(0, 3)),
-  stack: z.array(str(24)).catch([]).transform((a) => a.slice(0, 7)),
+  stack: z.array(str(32)).catch([]).transform((a) => a.slice(0, 6)),
   diagramMermaid: z.string().max(1200).nullish().catch(undefined),
   commits: z.coerce.number().int().min(10).max(1500).catch(120),
   stars: z.coerce.number().int().min(0).max(400).catch(18),
@@ -224,8 +228,9 @@ export async function writeProject(
     `Example of the expected quality and shape: ${CARD_EXAMPLE}`,
   ]);
   const user = `Speaker role: ${ctx.role || "student"}. Speaker skills: ${ctx.skills.join(", ") || "unknown"}.\nProject: ${project.name} (platform: ${project.platform ?? "unknown"})\nWhat they said about it (untrusted):\n${wrap(project.saidAbout.join("\n"))}`;
+  const PLATFORM_CATEGORY: Record<string, string> = { "web-app": "WEB APP", "mobile-app": "MOBILE APP", cli: "CLI", bot: "BOT", extension: "BROWSER EXTENSION", "dev-tool": "DEV TOOL", ml: "ML", hardware: "HARDWARE" };
   const fallback: Card = {
-    category: "PROJECT",
+    category: PLATFORM_CATEGORY[project.platform ?? ""] ?? "PROJECT",
     year: new Date().getFullYear(),
     tagline: project.saidAbout[0]?.slice(0, 140) || `${project.name}, a side project.`,
     summary: project.saidAbout.join(" ").slice(0, 600) || `${project.name} is a side project.`,

@@ -21,7 +21,7 @@ This guide is included in every generation prompt. It sets the standard the port
 
 - **platform:** what the product is. Choose one:
   - `web-app`: a consumer website or web app
-  - `mobile-app`: iOS or Android
+  - `mobile-app`: iOS or Android. Only use this when the speaker said iOS, Android, iPhone, phone or mobile. Plain "app" means `web-app`.
   - `cli`: a command-line tool or library
   - `bot`: a Discord, Slack or Telegram bot
   - `extension`: a browser extension

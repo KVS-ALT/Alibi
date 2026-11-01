@@ -12,9 +12,9 @@ These are first-pass layout findings before the planned distinct domain configur
 | Template ID | Desktop viewed | Mobile viewed | First-pass finding |
 | --- | --- | --- | --- |
 | journal | Yes | Yes | Layout pass; actual typed build/navigation/local receipt and repaired category filter verified |
-| fitness | Yes | Yes | Fail: near-black filter label on dark background; fix b2dfa85 reported, recheck pending |
+| fitness | Yes | Yes | Pass after b2dfa85: mobile recapture actually viewed; filter label now legible |
 | salon | Yes | Yes | Basic layout pass |
-| music | Yes | Yes | Fail: near-black filter label on dark background; fix b2dfa85 reported, recheck pending |
+| music | Yes | Yes | Pass after b2dfa85: mobile recapture actually viewed; filter label now legible |
 | coworking | Yes | Yes | Basic layout pass |
 | bakery | Yes | Yes | Basic layout pass; UI is darkening CTA accent for contrast |
 | agency | Yes | Yes | Basic layout pass |
@@ -22,7 +22,7 @@ These are first-pass layout findings before the planned distinct domain configur
 | job-board | Yes | Yes | Basic layout pass |
 | wedding | Yes | Yes | Basic layout pass; centered hero differs visibly from split layouts |
 
-Counts: 10/10 desktop and 10/10 mobile viewed; 8 basic layout passes, 2 contrast failures pending recheck. Functional distinction across twenty templates remains pending domain configurations: reviewed version shares generic cards, category listings, and a contact form.
+Counts: 10/10 desktop and 10/10 mobile viewed; 10 basic layout passes after mobile contrast recheck. Functional distinction across twenty templates remains pending domain configurations: reviewed version shares generic cards, category listings, and a contact form.
 
 ## Executed checks
 
@@ -43,6 +43,7 @@ Browser automation later timed out on Page.getFrameTree. Remaining visual review
 
 ## Follow-up required
 
-- Recheck dark theme contrast after b2dfa85.
+- Dark theme mobile contrast recheck completed on refreshed fitness/music captures; bakery darker CTA also viewed.
 - Recheck domain-specific configurations and representative mobile forms after generation adds them.
 - Final integration production build and complete suite must run after all merges; earlier test passes do not cover later edits.
+

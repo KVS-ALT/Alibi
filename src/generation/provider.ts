@@ -315,3 +315,15 @@ export function createOpenAIProvider(config: OpenAIProviderOptions = {}) {
   } };
 }
 
+// Server-only shared plan machinery. No provider transport or credentials are
+// shared: each adapter owns its fixed endpoint and dedicated key.
+export {
+  outputSchema as prototypeDraftSchema,
+  composeDraft as composePrototypeDraft,
+  catalogContext as prototypeCatalogContext,
+  requestSchema as providerRequestSchema,
+  instructions as PROTOTYPE_INSTRUCTIONS,
+  readBounded as readProviderResponse,
+  ProviderFailure,
+};
+

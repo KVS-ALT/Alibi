@@ -16,7 +16,7 @@ export default function KitPreview() {
                 <div className="mb-2 font-mono text-xs text-neutral-500">
                   {kit} · {theme}
                 </div>
-                <MockFrame html={renderMock({ ...KIT_SAMPLES[kit], theme })} url={`${KIT_SAMPLES[kit].appName.toLowerCase()}.app`} />
+                <MockFrame html={renderMock({ ...KIT_SAMPLES[kit], theme })} title={KIT_SAMPLES[kit].appName} />
               </section>
             )),
           )}

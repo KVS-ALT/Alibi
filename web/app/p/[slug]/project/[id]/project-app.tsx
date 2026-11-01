@@ -13,6 +13,13 @@ export default function ProjectApp({ project, theme, storageKey, back }: { proje
   const [query, setQuery] = useState('');
   const [title, setTitle] = useState('');
   const [tab, setTab] = useState('Workspace');
+  const [previewCss, setPreviewCss] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    const sheets = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')).filter(link => new URL(link.href).origin === location.origin);
+    Promise.all(sheets.map(async link => { const response = await fetch(link.href); return response.ok ? response.text() : ''; })).then(css => { if (!cancelled) setPreviewCss(css.join('\n')); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => {
     try {
       const saved: unknown = JSON.parse(localStorage.getItem(storageKey) || 'null');
@@ -32,10 +39,10 @@ export default function ProjectApp({ project, theme, storageKey, back }: { proje
       <header className="space-y-4">
         <a className="inline-flex min-h-11 items-center underline underline-offset-4" href={back}>Back to portfolio</a>
         <p className={`text-sm ${muted}`}>{project.category} / Interactive prototype</p>
-        <h1 className="break-words text-4xl font-semibold tracking-tight">{project.title}</h1>
+        <h1 className="break-words text-[40px] font-semibold tracking-tight">{project.title}</h1>
         <p className={`max-w-3xl text-lg ${muted}`}>{project.tagline}</p>
       </header>
-      <nav aria-label="Project views" data-ui-container className="flex flex-wrap gap-3">
+      <nav aria-label="Project views" data-ui-container className="flex flex-wrap gap-3 p-2">
         {['Workspace', 'Product preview', 'About'].map(label => <button key={label} onClick={() => setTab(label)} aria-pressed={tab === label} className={`min-h-11 rounded-lg border px-4 py-3 text-sm ${tab === label ? 'border-indigo-700 bg-indigo-700 text-white' : panel}`}>{label}</button>)}
       </nav>
       {tab === 'Workspace' && <section aria-label="Workspace" className="space-y-6">
@@ -44,7 +51,7 @@ export default function ProjectApp({ project, theme, storageKey, back }: { proje
         </dl>
         <div className={`space-y-6 rounded-xl border p-6 ${panel}`}>
           <div className="space-y-2"><label className="block text-sm font-medium" htmlFor="search">Search items</label><input id="search" value={query} onChange={event => setQuery(event.target.value)} className={`min-h-11 w-full rounded-lg border p-3 ${panel}`} /></div>
-          <form className="flex flex-wrap items-end gap-3" data-ui-container onSubmit={event => { event.preventDefault(); if (!title.trim() || items.length >= 100) return; setItems(current => [...current, { id: crypto.randomUUID(), title: title.trim(), done: false }]); setTitle(''); }}>
+          <form className="flex flex-wrap items-end gap-3 p-2" data-ui-container onSubmit={event => { event.preventDefault(); if (!title.trim() || items.length >= 100) return; setItems(current => [...current, { id: crypto.randomUUID(), title: title.trim(), done: false }]); setTitle(''); }}>
             <div className="min-w-0 flex-1 space-y-2"><label className="block text-sm font-medium" htmlFor="item">New item</label><input id="item" required maxLength={200} value={title} onChange={event => setTitle(event.target.value)} className={`min-h-11 w-full rounded-lg border p-3 ${panel}`} /></div>
             <button disabled={!ready || items.length >= 100} className="min-h-11 rounded-lg bg-indigo-700 px-6 py-3 text-white disabled:opacity-50">Add item</button>
           </form>
@@ -53,7 +60,7 @@ export default function ProjectApp({ project, theme, storageKey, back }: { proje
           <p className={`text-sm ${muted}`}>Changes are saved in this browser. This prototype uses sample data.</p>
         </div>
       </section>}
-      {tab === 'Product preview' && <section aria-label="Product preview"><MockFrame html={renderMock(spec)} title={project.title} dark={dark} /></section>}
+      {tab === 'Product preview' && <section aria-label="Product preview"><MockFrame html={`<style>${previewCss}</style>${renderMock(spec)}`} title={project.title} dark={dark} /></section>}
       {tab === 'About' && <section aria-label="About project" className={`space-y-6 rounded-xl border p-6 ${panel}`}><h2 className="text-2xl font-semibold">About {project.title}</h2><p>{project.summary}</p><dl className="space-y-4">{project.details?.map(detail => <div key={detail.label}><dt className="font-semibold">{detail.label}</dt><dd className={muted}>{detail.value}</dd></div>)}</dl><p className={muted}>{project.stack.join(' / ')}</p></section>}
     </div>
   </main>;

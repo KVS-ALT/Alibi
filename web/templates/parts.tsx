@@ -77,6 +77,15 @@ function srcDoc(html: string) {
 export function MockFrame({ html, title = "Project preview", dark = false }: { html: string; title?: string; dark?: boolean }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0);
+  const [kitCss, setKitCss] = useState('');
+
+  useEffect(() => {
+    if (!/data-kit=/.test(html)) return;
+    let cancelled = false;
+    const sheets = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')).filter(link => new URL(link.href).origin === location.origin);
+    Promise.all(sheets.map(async link => { const response = await fetch(link.href); return response.ok ? response.text() : ''; })).then(css => { if (!cancelled) setKitCss(css.join('\n')); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [html]);
 
   useEffect(() => {
     const el = boxRef.current;
@@ -101,7 +110,7 @@ export function MockFrame({ html, title = "Project preview", dark = false }: { h
           <iframe
             title={`${title} project preview`}
             sandbox=""
-            srcDoc={srcDoc(html)}
+            srcDoc={srcDoc(`<style>${kitCss}</style>${html}`)}
             loading="eager"
             tabIndex={-1}
             className="pointer-events-none absolute left-0 top-0 origin-top-left border-0"

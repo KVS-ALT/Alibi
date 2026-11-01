@@ -13,7 +13,7 @@ and backend business logic are not synthesized. No generated code executes.
 Deploy the root render.yaml Blueprint or create a Node web service using:
 - Branch: feature/render-project-apps
 - Build: npm ci --include=dev && npm run build:web
-- Start: npm run start:web -- --hostname 0.0.0.0 --port $PORT
+- Start: npm run start -w web -- --hostname 0.0.0.0 --port $PORT
 - Health: /api/health
 - Node: 22.20.0
 

@@ -39,3 +39,14 @@ describe('session lifecycle integration', () => {
  });
 });
 
+
+describe('changed category options',()=>{
+ it('drops a saved filter choice that is unavailable in the replacement template',()=>{
+  const old=spec('session-a');const form=old.screens[0].components[0];if(form.type!=='form')throw new Error('fixture');
+  form.properties.fields=[{id:'category',label:'Category',type:'select',required:false,options:['All','Bread']}];
+  form.actions=[{type:'filter',dataKey:'items',field:'category',stateKey:'category'}];old.demoData={items:[{category:'Bread'}]};
+  const state=reconcilePreviewState(null,old);state.forms.contact.category='Bread';state.values.category='Bread';state.filters.items={field:'category',stateKey:'category'};
+  const next=structuredClone(old);const nextForm=next.screens[0].components[0];if(nextForm.type!=='form')throw new Error('fixture');nextForm.properties.fields[0].options=['All','Acoustic'];next.demoData={items:[{category:'Acoustic'}]};
+  const reconciled=reconcilePreviewState(state,next,old);expect(reconciled.forms.contact.category).toBe('');expect(reconciled.values.category??'').toBe('');
+ });
+});

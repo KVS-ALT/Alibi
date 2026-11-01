@@ -27,15 +27,17 @@ export function reconcilePreviewState(previous: PreviewState | null, spec: UiSpe
   const old = oldComponents.get(component.id);
   forms[component.id] = Object.fromEntries(component.properties.fields.map(field => {
    const compatible = old?.type === 'form' && old.properties.fields.some(oldField => oldField.id === field.id && oldField.type === field.type);
-   return [field.id, sameSession && compatible ? previous!.forms[component.id]?.[field.id] ?? '' : ''];
+   const value = sameSession && compatible ? previous!.forms[component.id]?.[field.id] ?? '' : '';
+   return [field.id, field.type === 'select' && !field.options?.includes(value) ? '' : value];
   }));
   if (sameSession && old?.type === 'form' && JSON.stringify(old.properties.fields) === JSON.stringify(component.properties.fields) && previous!.submitted[component.id]) submitted[component.id] = previous!.submitted[component.id];
  }
  const actions = spec.screens.flatMap(screen => screen.components.flatMap(component => component.actions));
  const stateKeys = new Set(actions.flatMap(action => action.type === 'setState' ? [action.key] : action.type === 'filter' ? [action.stateKey] : action.type === 'submitDemoForm' ? [action.resultStateKey] : []));
  const invalidReceiptKeys = new Set(actions.flatMap(action => action.type === 'submitDemoForm' && !submitted[action.formId] ? [action.resultStateKey] : []));
- const values = sameSession ? Object.fromEntries(Object.entries(previous!.values).filter(([key]) => stateKeys.has(key) && !invalidReceiptKeys.has(key))) : {};
- const filters = sameSession ? Object.fromEntries(Object.entries(previous!.filters).filter(([key,value]) => Object.hasOwn(spec.demoData, key) && actions.some(action => action.type === 'filter' && action.dataKey === key && action.field === value.field && action.stateKey === value.stateKey))) : {};
+ const selectOptions = new Map(spec.screens.flatMap(screen => screen.components.flatMap(component => component.type === 'form' ? component.properties.fields.filter(field => field.type === 'select').map(field => [field.id, field.options ?? []] as const) : [])));
+ const values = sameSession ? Object.fromEntries(Object.entries(previous!.values).filter(([key, value]) => stateKeys.has(key) && !invalidReceiptKeys.has(key) && (!selectOptions.has(key) || typeof value === 'string' && selectOptions.get(key)!.includes(value)))) : {};
+ const filters = sameSession ? Object.fromEntries(Object.entries(previous!.filters).filter(([key,value]) => Object.hasOwn(spec.demoData, key) && Object.hasOwn(values, value.stateKey) && actions.some(action => action.type === 'filter' && action.dataKey === key && action.field === value.field && action.stateKey === value.stateKey))) : {};
  return { sessionId: spec.sessionId, activeScreenId: sameSession && screens.has(previous!.activeScreenId) ? previous!.activeScreenId : spec.screens[0].id, values, forms, filters, submitted };
 }
 export function acceptGeneration(session: BuilderSession, result: GenerationResult): BuilderSession {
@@ -51,7 +53,15 @@ export function applyAction(state: PreviewState, action: Action, spec: UiSpec, c
  if (action.type === 'setState') return { ...state, values: { ...state.values, [action.key]: action.value } };
  if (action.type === 'filter') return { ...state, values: { ...state.values, ...(componentId && Object.hasOwn(state.forms[componentId] ?? {}, action.stateKey) ? { [action.stateKey]: state.forms[componentId][action.stateKey] } : {}) }, filters: { ...state.filters, [action.dataKey]: { field: action.field, stateKey: action.stateKey } } };
  const form = spec.screens.flatMap(screen => screen.components).find(component => component.id === action.formId && component.type === 'form');
- if (!form || form.type !== 'form' || form.properties.fields.some(field => field.required && !state.forms[form.id]?.[field.id]?.trim())) return state;
+ if (!form || form.type !== 'form' || form.properties.fields.some(field => {
+  const value = state.forms[form.id]?.[field.id]?.trim() ?? '';
+  if (!value) return field.required;
+  if (field.type === 'email') return !/^[^\s@]+@[^\s@]+$/.test(value);
+  if (field.type === 'number') return !Number.isInteger(Number(value)) || Number(value) < 1;
+  if (field.type === 'select') return !field.options?.includes(value);
+  if (field.type === 'date') { const date = new Date(value); return !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value; }
+  return false;
+ })) return state;
  return { ...state, submitted: { ...state.submitted, [action.formId]: 'Saved in this demo only. No real request was sent.' }, values: { ...state.values, [action.resultStateKey]: 'submitted' } };
 }
 export function briefSummary(brief: Brief): string { return brief.requirements.join(' · '); }

@@ -50,4 +50,13 @@ describe('persisted and regenerated preview boundaries', () => {
   expect(next.values.category).toBe('Community');
   expect(next.filters.listings).toEqual({ field: 'category', stateKey: 'category' });
  });
+ it('blocks direct submit actions until the target form is valid', () => {
+  const current = spec(), preview = reconcilePreviewState(null, current);
+  const action = { type: 'submitDemoForm' as const, formId: 'contact', resultStateKey: 'receipt' };
+  expect(applyAction(preview, action, current)).toBe(preview);
+  preview.forms.contact.email = 'invalid';
+  expect(applyAction(preview, action, current)).toBe(preview);
+  preview.forms.contact.email = 'person@example.test';
+  expect(applyAction(preview, action, current).values.receipt).toBe('submitted');
+ });
 });

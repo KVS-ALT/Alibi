@@ -15,7 +15,14 @@
     "Georgia",
     "monospace",
     "ui-sans-serif",
-    "Segoe UI"
+    "Segoe UI",
+    "ui-monospace",
+    "SFMono-Regular",
+    "Menlo",
+    "Monaco",
+    "Consolas",
+    "Liberation Mono",
+    "Courier New"
   ],
   "fontSizes": [
     10,
@@ -38,6 +45,42 @@
     96
   ],
   "typeRules": [
+    {
+      "selector": "[data-kit] h1",
+      "sizes": [
+        22,
+        30,
+        36
+      ]
+    },
+    {
+      "selector": "[data-kit] h2",
+      "sizes": [
+        14,
+        18,
+        20,
+        24
+      ]
+    },
+    {
+      "selector": "[data-kit]",
+      "sizes": [
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        16,
+        17,
+        18,
+        20,
+        22,
+        24,
+        30,
+        36
+      ]
+    },
     {
       "selector": ".mock-root h1",
       "sizes": [

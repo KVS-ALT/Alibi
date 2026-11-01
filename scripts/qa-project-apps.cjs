@@ -4,6 +4,7 @@ const fs = require('node:fs');
 (async () => {
  const { checkPage } = await import('lintapple');
  const policy = JSON.parse(fs.readFileSync('ui-policy.json', 'utf8'));
+ const base = (process.argv[2] || 'http://127.0.0.1:3012').replace(/\/$/, '');
  fs.mkdirSync('ui-qa',{recursive:true});
  const browser = await chromium.launch({channel:'chrome',headless:true});
  const results=[];
@@ -11,7 +12,6 @@ const fs = require('node:fs');
  for (const viewport of policy.viewports) {
   const page=await browser.newPage({viewport});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  const base='http://127.0.0.1:3012';
   const data=await (await page.request.get(base+'/api/p/demo-backup')).json();
   const id=Object.keys(data.portfolio.projects)[0];
   await page.goto(base+'/p/demo-backup/project/'+encodeURIComponent(id));
@@ -38,7 +38,7 @@ const fs = require('node:fs');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   await page.close();
  }
- assert.equal((await (await browser.newPage()).request.get('http://127.0.0.1:3012/p/no-such-portfolio/project/no-project')).status(),404);
+ assert.equal((await (await browser.newPage()).request.get(base+'/p/no-such-portfolio/project/no-project')).status(),404);
  fs.mkdirSync('ui-qa',{recursive:true});fs.writeFileSync('ui-qa/project-apps.json',JSON.stringify(results,null,2));
  const findings=results.flatMap(({viewport,state,report})=>report.findings.map(finding=>({width:viewport.width,state,...finding})));
  assert.deepEqual(findings,[], 'Project app lintapple findings; see ui-qa/project-apps.json');

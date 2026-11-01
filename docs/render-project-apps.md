@@ -27,14 +27,21 @@ items are not shared across devices. /p/demo-backup is the explicit fixture.
 Validation at this branch's implementation snapshot:
 - `npm test`: all 92 offline regression tests pass.
 - `npm run build:web`: production compilation, type checking and page generation pass.
-- `node scripts/qa-project-apps.cjs`: eight rendered states pass lintapple with
+- `node scripts/qa-project-apps.cjs http://127.0.0.1:3014`: eight rendered states pass lintapple with
   zero findings at 390×844 and 1440×900: workspace, empty search, product preview
   and About. The script checks adding/completing an item, persistence after
   reload, search, no page errors, no horizontal overflow and an unknown-project 404.
+- The final compiled stylesheet contains all 140 finite accent/status utilities
+  assembled by the reviewed mock kits, with zero missing selectors. This covers
+  the color safelist; it does not establish visual quality across every kit.
+
+The QA script accepts an optional base URL, defaulting to `http://127.0.0.1:3012`.
 
 Browser coverage uses the `demo-backup` shipit fixture and its template. It does
 not establish all-theme or all-kit coverage, live AI/microphone behavior, Render
 deployment, durable database behavior or project-specific external integrations.
+The Product preview is a static sandboxed product screen; the separate Workspace
+tab provides the working browser-local search, add and completion controls.
 The build retains the teammate kit's unused `Accent` type lint warning.
 The QA report is written before any visual findings fail the command, so failures
 remain reviewable in `ui-qa/project-apps.json`.

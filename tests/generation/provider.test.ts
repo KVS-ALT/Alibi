@@ -17,7 +17,7 @@ async function fixture() {
   return { input, baseline: result.uiSpec, draft };
 }
 function response(draft: unknown) { return new Response(JSON.stringify({ status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: JSON.stringify(draft) }] }] }), { status: 200 }); }
-const configured = (transport: typeof fetch, extra = {}) => createOpenAIProvider({ enabled: true, apiKey: 'test-secret-never-live', model: 'gpt-4.1-mini', transport, ...extra });
+const configured = (transport: typeof fetch, extra = {}) => createOpenAIProvider({ enabled: true, apiKey: 'test-secret-never-live', model: 'gpt-6-sol', transport, ...extra });
 
 describe('server-only OpenAI structured generation', () => {
   it('does not invoke transport when disabled, even with a key present', async () => {
@@ -39,7 +39,7 @@ describe('server-only OpenAI structured generation', () => {
     expect(result.uiSpec.screens.map(s => [s.id, s.components.map(c => [c.id, c.type, c.actions])])).toEqual(baseline.screens.map(s => [s.id, s.components.map(c => [c.id, c.type, c.actions])]));
     const [url, init] = transport.mock.calls[0], payload = JSON.parse(String(init?.body));
     expect(url).toBe('https://api.openai.com/v1/responses');
-    expect(payload).toMatchObject({ model: 'gpt-4.1-mini', store: false, max_output_tokens: 3000, text: { format: { type: 'json_schema', strict: true } } });
+    expect(payload).toMatchObject({ model: 'gpt-6-sol', reasoning: { effort: 'none' }, store: false, max_output_tokens: 3000, text: { format: { type: 'json_schema', strict: true } } });
     expect(payload).not.toHaveProperty('tools');
     expect(String(init?.body)).not.toContain('test-secret-never-live');
     expect(JSON.stringify(result)).not.toContain('test-secret-never-live');

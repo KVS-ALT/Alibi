@@ -5,12 +5,13 @@
  *
  * Protocol: https://developers.openai.com/api/docs/guides/structured-outputs
  * Errors: https://developers.openai.com/api/docs/guides/error-codes
+ * Model: https://developers.openai.com/api/docs/models/gpt-6-sol
  */
 import { z } from 'zod';
 import type { Brief, GenerationRequest, GenerationResult, UiSpec } from '../contracts';
 import { generatePrototype, validateUiSpec } from './index';
 
-export const OPENAI_MODELS = ['gpt-4.1-mini', 'gpt-4.1'] as const;
+export const OPENAI_MODELS = ['gpt-6-sol'] as const;
 export const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 export interface OpenAIProviderOptions {
   enabled?: boolean;
@@ -155,7 +156,7 @@ const instructions = [
 ].join(' ');
 
 export function createOpenAIProvider(config: OpenAIProviderOptions = {}) {
-  const model = config.model ?? 'gpt-4.1-mini', baseUrl = (config.baseUrl ?? OPENAI_BASE_URL).replace(/\/$/, '');
+  const model = config.model ?? 'gpt-6-sol', baseUrl = (config.baseUrl ?? OPENAI_BASE_URL).replace(/\/$/, '');
   const timeoutMs = config.timeoutMs ?? 15000, maxRetries = config.maxRetries ?? 1, maxOutputTokens = config.maxOutputTokens ?? 3000;
   const configurationValid = baseUrl === OPENAI_BASE_URL && OPENAI_MODELS.includes(model as typeof OPENAI_MODELS[number]) &&
     Boolean(config.apiKey && /^[^\s\u0000-\u001f]{8,512}$/.test(config.apiKey)) &&
@@ -183,7 +184,7 @@ export function createOpenAIProvider(config: OpenAIProviderOptions = {}) {
     const shape = outputSchema(baseline), jsonSchema = z.toJSONSchema(shape);
     delete jsonSchema.$schema;
     const payload = JSON.stringify({
-      model, store: false, max_output_tokens: maxOutputTokens,
+      model, store: false, max_output_tokens: maxOutputTokens, reasoning: { effort: 'none' },
       input: [
         { role: 'system', content: instructions },
         { role: 'user', content: JSON.stringify({ brief: request.brief, template: { id: baseline.templateId, cards: baseline.screens.flatMap(screen => screen.components).filter(c => c.type === 'card').map(c => ({ id: c.id, ...c.properties })), rows: baseline.demoData.listings } }) },

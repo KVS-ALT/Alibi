@@ -1,10 +1,20 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createElevenLabsTranscriber } from '../../server/elevenlabs';
 
-const audio = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 1, 2, 3, 4]);
-const chunk = { sessionId: 's1', chunkId: 'c1', audio, mimeType: 'audio/webm;codecs=opus', durationMs: 2000 };
+function wav(seconds = 1) {
+  const result = new Uint8Array(44 + seconds * 32000);
+  const view = new DataView(result.buffer);
+  const text = (offset: number, value: string) => [...value].forEach((char, index) => view.setUint8(offset + index, char.charCodeAt(0)));
+  text(0, 'RIFF'); view.setUint32(4, result.length - 8, true); text(8, 'WAVE'); text(12, 'fmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, 16000, true);
+  view.setUint32(28, 32000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); text(36, 'data'); view.setUint32(40, result.length - 44, true);
+  return result;
+}
+const audio = wav();
+const chunk = { sessionId: 's1', chunkId: 'c1', audio, mimeType: 'audio/wav', durationMs: 1000 };
 const live = { enabled: true, liveCallsAllowed: true, apiKey: 'synthetic-secret' };
 const response = () => new Response(JSON.stringify({ text: 'Add a booking form.', language_code: 'en' }), { status: 200 });
+afterEach(() => vi.useRealTimers());
 
 describe('server bounded ElevenLabs transcription', () => {
   it('performs no request when disabled, even with a configured key', async () => {
@@ -86,5 +96,37 @@ describe('server bounded ElevenLabs transcription', () => {
     provider.startSession({ sessionId: 's1', consented: true, providerRetentionAccepted: true });
     expect(await provider.transcribe({ ...chunk, audio: new Uint8Array([1, 2, 3, 4]) })).toMatchObject({ ok: false, code: 'invalid_audio' });
     expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('derives the duration from exact canonical PCM WAV bytes instead of trusting reported metadata', async () => {
+    const fetcher = vi.fn(async () => response());
+    const provider = createElevenLabsTranscriber(live, { fetcher });
+    provider.startSession({ sessionId: 's1', consented: true });
+    const wrongLength = wav(); new DataView(wrongLength.buffer).setUint32(40, 10, true);
+    for (const bytes of [wav(31), wrongLength]) expect(await provider.transcribe({ ...chunk, audio: bytes })).toMatchObject({ ok: false, code: 'invalid_audio' });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('frees ended session slots and only restarts with fresh consent', () => {
+    const provider = createElevenLabsTranscriber();
+    for (let index = 0; index < 201; index++) {
+      expect(provider.startSession({ sessionId: `s${index}`, consented: true })).toBe(true);
+      provider.endSession(`s${index}`);
+    }
+    expect(provider.startSession({ sessionId: 's1', consented: false })).toBe(false);
+    expect(provider.startSession({ sessionId: 's1', consented: true })).toBe(true);
+  });
+  it('settles the deadline even if an injected transport ignores abort', async () => {
+    vi.useFakeTimers();
+    const provider = createElevenLabsTranscriber({ ...live, timeoutMs: 100 }, { fetcher: async () => new Promise<Response>(() => {}) });
+    provider.startSession({ sessionId: 's1', consented: true });
+    const pending = provider.transcribe(chunk);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await pending).toMatchObject({ ok: false, code: 'provider_timeout' });
+  }, 1000);
+  it('rejects a provider transcript that echoes the configured server key', async () => {
+    const provider = createElevenLabsTranscriber(live, { fetcher: async () => new Response(JSON.stringify({ text: 'untrusted synthetic-secret response' })) });
+    provider.startSession({ sessionId: 's1', consented: true });
+    const result = await provider.transcribe(chunk);
+    expect(result).toMatchObject({ ok: false, code: 'invalid_provider_response' });
+    expect(JSON.stringify(result)).not.toContain('synthetic-secret');
   });
 });

@@ -10,9 +10,9 @@ class HttpError extends Error {constructor(public status:number,public code:stri
 type JobEvent={type:'stage';progress:Progress}|{type:'result';result:PackageResult['result']}|{type:'error';code:string;message:string};
 interface Job {id:string;events:JobEvent[];listeners:Set<ServerResponse>;done:boolean;abort:AbortController}
 interface Session {id:string;owner:string;expiresAt:number;jobs:Map<string,Job>;latest?:PackageResult;version:number}
-export interface ServerOptions {runner?:JobRunner;staticDir?:string;ttlMs?:number;maxSessions?:number;maxActiveJobs?:number;now?:()=>number;secureCookies?:boolean;rateLimit?:number}
+export interface ServerOptions {runner?:JobRunner;staticDir?:string;ttlMs?:number;maxSessions?:number;maxActiveJobs?:number;now?:()=>number;secureCookies?:boolean;rateLimit?:number;cookieName?:string}
 const constantEqual=(a:string,b:string)=>{const first=Buffer.from(a),second=Buffer.from(b);return first.length===second.length&&timingSafeEqual(first,second);};
-function ownerCookie(req:IncomingMessage){return req.headers.cookie?.split(';').map(v=>v.trim()).find(v=>v.startsWith('larp_owner='))?.slice(11)??'';}
+function ownerCookie(req:IncomingMessage,name:string){return req.headers.cookie?.split(';').map(v=>v.trim()).find(v=>v.startsWith(`${name}=`))?.slice(name.length+1)??'';}
 async function readJson(req:IncomingMessage){
  if(!req.headers['content-type']?.startsWith('application/json'))throw new HttpError(415,'JSON_REQUIRED','Use application/json.');
  if(Number(req.headers['content-length']??0)>128*1024)throw new HttpError(413,'BODY_TOO_LARGE','Request exceeds 128 KiB.');
@@ -26,6 +26,8 @@ const mime:Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text
 
 export function createApp(options:ServerOptions={}){
  const runner=options.runner??localRunner,now=options.now??Date.now,ttl=options.ttlMs??30*60*1000;
+ const cookieName=options.cookieName??'larp_owner';
+ if(!/^[a-zA-Z0-9_-]{1,40}$/.test(cookieName))throw new Error('Invalid server cookie name.');
  const sessions=new Map<string,Session>(),rates=new Map<string,{start:number;count:number}>();let activeJobs=0;
  // Intentionally disabled: no credentials, global fetch, or sending transport are wired.
  const email=createEmailHandoff();
@@ -47,16 +49,16 @@ export function createApp(options:ServerOptions={}){
     if(rates.size>2048){const oldest=rates.keys().next().value;if(oldest)rates.delete(oldest);}
     if(path==='/api/sessions'&&req.method==='POST'){
      const raw=await readJson(req);const parsed=sessionIdSchema.safeParse(raw?.id);if(!parsed.success||Object.keys(raw).some(k=>k!=='id'))throw new HttpError(400,'INVALID_SESSION','Provide a session UUID.');
-     let owner=ownerCookie(req);const existing=sessions.get(parsed.data);
+     let owner=ownerCookie(req,cookieName);const existing=sessions.get(parsed.data);
      if(existing){if(!constantEqual(existing.owner,owner))throw new HttpError(404,'SESSION_NOT_FOUND','Session not found.');json(res,200,{id:existing.id,expiresAt:existing.expiresAt,storage:'ephemeral-memory'});return;}
      if(sessions.size>=(options.maxSessions??100))throw new HttpError(503,'SESSION_CAPACITY','Session capacity reached; try again later.');
      if(!/^[a-f0-9]{64}$/.test(owner))owner=randomBytes(32).toString('hex');
      const session:Session={id:parsed.data,owner,expiresAt:now()+ttl,jobs:new Map(),version:0};sessions.set(session.id,session);
-     res.setHeader('Set-Cookie',`larp_owner=${owner}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=${Math.floor(ttl/1000)}${options.secureCookies?'; Secure':''}`);
+     res.setHeader('Set-Cookie',`${cookieName}=${owner}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=${Math.floor(ttl/1000)}${options.secureCookies?'; Secure':''}`);
      json(res,201,{id:session.id,expiresAt:session.expiresAt,storage:'ephemeral-memory'});return;
     }
     const match=path.match(/^\/api\/sessions\/([^/]+)(?:\/(.*))?$/);if(!match)throw new HttpError(404,'NOT_FOUND','Route not found.');
-    const session=sessions.get(match[1]);if(!session||!constantEqual(session.owner,ownerCookie(req)))throw new HttpError(404,'SESSION_NOT_FOUND','Session not found or expired.');
+    const session=sessions.get(match[1]);if(!session||!constantEqual(session.owner,ownerCookie(req,cookieName)))throw new HttpError(404,'SESSION_NOT_FOUND','Session not found or expired.');
     const route=match[2]??'';
     if(route===''&&req.method==='GET'){json(res,200,{id:session.id,expiresAt:session.expiresAt,storage:'ephemeral-memory',result:session.latest?.result});return;}
     if(route===''&&req.method==='DELETE'){for(const job of session.jobs.values()){job.abort.abort();finish(job);}sessions.delete(session.id);json(res,200,{deleted:true});return;}

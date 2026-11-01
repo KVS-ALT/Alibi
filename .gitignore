@@ -6,3 +6,5 @@ dist/
 *.tsbuildinfo
 dist-server/
 worktrees/
+dist-candidate/
+dist-server-candidate/

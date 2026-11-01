@@ -11,7 +11,9 @@
     "start": "node --env-file-if-exists=.env dist-server/index.js",
     "dev:server": "vite build --config vite.server.config.ts && node --watch dist-server/index.js",
     "workflows:dev": "render workflows dev -- node dist-server/workflows.js",
-    "workflows:start": "node dist-server/workflows.js"
+    "workflows:start": "node dist-server/workflows.js",
+    "build:candidate": "tsc -b && vite build --mode candidate && tsc -p tsconfig.server.json && vite build --config vite.server.config.ts --mode candidate",
+    "start:candidate": "node --env-file-if-exists=.env dist-server-candidate/index.js --candidate --no-live-providers"
   },
   "dependencies": {
     "@renderinc/sdk": "1.0",

@@ -61,24 +61,44 @@ function normalize(spec: MockSpec) {
     ...spec,
     nav: pad(spec.nav.map(bare).filter(Boolean), 4, (i) => ["Overview", "Activity", "Insights", "Settings"][i]),
     action: bare(spec.action) || "New",
+    user: spec.user || "you",
     stats: pad(spec.stats, 3, (i) => ({ label: ["Today", "This week", "Total"][i], value: ["12", "84", "1.2k"][i], note: "" })),
     items: pad(spec.items, 4, (i) => ({ title: `Item ${i + 1}`, subtitle: "", meta: `${i + 2}m ago`, tag: "", status: "neutral" as Status })),
   };
 }
 type Spec = ReturnType<typeof normalize>;
 
+// Deterministic bar heights (percent) so a chart looks like real activity and stays stable per product.
+function bars(seed: string, n = 14) {
+  let h = 2166136261;
+  for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  const out: number[] = [];
+  let v = 45;
+  for (let i = 0; i < n; i++) {
+    h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+    v = Math.max(18, Math.min(100, v + ((h % 41) - 16)));
+    out.push(v);
+  }
+  return out;
+}
+
 function dashboard(m: Spec) {
   const t = theme(m.theme === "dark"), a = m.accent;
+  const chart = bars(m.appName);
   return `<div class="flex h-full ${t.bg} ${t.text}">
 <aside class="flex w-52 flex-col border-r ${t.border} p-5">
-<div class="mb-8 flex items-center gap-2 text-lg font-semibold ${t.strong}"><div class="h-6 w-6 rounded-md bg-gradient-to-br from-${a}-400 to-${a}-600"></div>${esc(m.appName)}</div>
-<nav class="space-y-1 text-sm">${m.nav.map((n, i) => `<div class="rounded-md px-3 py-2 ${i === 0 ? `${t.active} ${t.strong}` : t.muted}">${esc(n)}</div>`).join("")}</nav>
-<div class="mt-auto flex items-center gap-2 text-xs ${t.muted}"><div class="h-7 w-7 rounded-full ${avatar(m.user, 0)}"></div>${esc(m.user)}</div>
+<div class="mb-8 flex items-center gap-2.5 text-[17px] font-semibold tracking-tight ${t.strong}"><div class="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-${a}-400 to-${a}-600 text-xs font-bold text-white shadow-sm">${initials(m.appName).slice(0, 1)}</div>${esc(m.appName)}</div>
+<nav class="space-y-0.5 text-[13px]">${m.nav.map((n, i) => `<div class="flex items-center gap-2.5 rounded-md px-3 py-2 ${i === 0 ? `${t.active} font-medium ${t.strong}` : t.muted}"><span class="h-1.5 w-1.5 rounded-full ${i === 0 ? `bg-${a}-500` : "bg-current opacity-40"}"></span>${esc(n)}</div>`).join("")}</nav>
+<div class="mt-auto flex items-center gap-2 border-t ${t.border} pt-4 text-xs ${t.muted}"><div class="h-7 w-7 rounded-full ${avatar(m.user, 0)}"></div><div><div class="${t.strong} font-medium">${esc(m.user)}</div><div class="text-[10px]">Free plan</div></div></div>
 </aside>
-<main class="flex-1 p-8">
-<div class="mb-6 flex items-end justify-between"><div><div class="text-sm ${t.muted}">${esc(m.context)}</div><h1 class="text-2xl font-semibold ${t.strong}">${esc(m.heading)}</h1></div><div class="rounded-md bg-${a}-500 px-4 py-2 text-sm font-medium text-white">${esc(m.action)}</div></div>
-<div class="mb-6 grid grid-cols-3 gap-4">${m.stats.map((st) => `<div class="rounded-lg ${t.card} p-4"><div class="text-xs ${t.muted}">${esc(st.label)}</div><div class="mt-1 text-2xl font-semibold ${t.strong}">${esc(st.value)}</div><div class="text-xs text-${a}-500">${esc(st.note)}</div></div>`).join("")}</div>
-<div class="overflow-hidden rounded-lg ${t.card} text-sm">${m.items.slice(0, 5).map((it, i, arr) => `<div class="flex items-center gap-4 px-4 py-3 ${i < arr.length - 1 ? `border-b ${t.border}` : ""}"><span class="h-2 w-2 shrink-0 rounded-full bg-${STATUS[it.status]}-400"></span><div class="min-w-0 flex-1"><div class="truncate ${t.strong}">${esc(it.title)}</div>${it.subtitle ? `<div class="truncate text-xs ${t.muted}">${esc(it.subtitle)}</div>` : ""}</div>${it.tag ? `<span class="rounded bg-${STATUS[it.status]}-400/10 px-2 py-0.5 text-xs text-${STATUS[it.status]}-500">${esc(it.tag)}</span>` : ""}<span class="w-20 text-right ${t.muted}">${esc(it.meta)}</span></div>`).join("")}</div>
+<main class="flex-1 p-7">
+<div class="mb-5 flex items-end justify-between"><div><div class="text-xs ${t.muted}">${esc(m.context)}</div><h1 class="text-[22px] font-semibold tracking-tight ${t.strong}">${esc(m.heading)}</h1></div><div class="flex gap-2"><div class="rounded-md border ${t.border} px-3 py-1.5 text-xs ${t.muted}">Last 7 days ▾</div><div class="rounded-md bg-${a}-600 px-3.5 py-1.5 text-xs font-medium text-white shadow-sm">${esc(m.action)}</div></div></div>
+<div class="mb-4 grid grid-cols-3 gap-3">${m.stats.map((st) => `<div class="rounded-xl ${t.card} p-4"><div class="text-[11px] font-medium ${t.muted}">${esc(st.label)}</div><div class="mt-1 text-2xl font-semibold tracking-tight ${t.strong}">${esc(st.value)}</div><div class="mt-0.5 text-[11px] text-${a}-500">${esc(st.note)}</div></div>`).join("")}</div>
+<div class="grid grid-cols-5 gap-3">
+<div class="col-span-3 overflow-hidden rounded-xl ${t.card} text-[13px]">${m.items.slice(0, 5).map((it, i, arr) => `<div class="flex items-center gap-3 px-4 py-[11px] ${i < arr.length - 1 ? `border-b ${t.border}` : ""}"><span class="h-2 w-2 shrink-0 rounded-full bg-${STATUS[it.status]}-400"></span><div class="min-w-0 flex-1"><div class="truncate font-medium ${t.strong}">${esc(it.title)}</div>${it.subtitle ? `<div class="truncate text-[11px] ${t.muted}">${esc(it.subtitle)}</div>` : ""}</div>${it.tag ? `<span class="shrink-0 rounded-full bg-${STATUS[it.status]}-400/10 px-2 py-0.5 text-[10px] font-medium text-${STATUS[it.status]}-500">${esc(it.tag)}</span>` : ""}<span class="w-14 shrink-0 text-right text-[11px] ${t.muted}">${esc(it.meta)}</span></div>`).join("")}</div>
+<div class="col-span-2 flex flex-col rounded-xl ${t.card} p-4"><div class="flex items-baseline justify-between"><div class="text-[11px] font-medium ${t.muted}">${esc(m.stats[0].label)}</div><div class="text-[11px] text-${a}-500">14d</div></div><div class="text-lg font-semibold ${t.strong}">${esc(m.stats[0].value)}</div><div class="mt-auto flex h-36 items-end gap-1">${chart.map((v, i) => `<div class="flex-1 rounded-t bg-${a}-500" style="height:${v}%;opacity:${(0.35 + (i / chart.length) * 0.65).toFixed(2)}"></div>`).join("")}</div></div>
+</div>
+${m.callout ? `<div class="mt-3 flex items-center gap-2 rounded-lg border ${t.border} px-3 py-2 text-[11px] ${t.muted}"><span class="h-1.5 w-1.5 rounded-full bg-${a}-500"></span>${esc(m.callout)}</div>` : ""}
 </main></div>`;
 }
 
@@ -143,7 +163,7 @@ ${m.callout ? `<div class="text-neutral-600"># ${esc(m.callout)}</div>` : ""}
 
 function chat(m: Spec) {
   const a = m.accent;
-  const icon: Record<Status, string> = { good: "🟢", warn: "🟡", bad: "🔴", neutral: "⚪" };
+
   return `<div class="flex h-full bg-[#313338] text-[#dbdee1]">
 <div class="flex w-[72px] flex-col items-center gap-2 bg-[#1e1f22] py-3"><div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-${a}-500 text-sm font-bold text-white">${initials(m.context || m.appName)}</div><div class="h-0.5 w-8 bg-white/10"></div><div class="h-12 w-12 rounded-full bg-[#313338]"></div><div class="h-12 w-12 rounded-full bg-[#313338]"></div></div>
 <div class="w-56 bg-[#2b2d31] p-3"><div class="mb-4 border-b border-black/30 pb-3 text-sm font-semibold text-white">${esc(m.context || m.appName)}</div><div class="mb-1 text-[11px] font-semibold uppercase text-neutral-400">Text channels</div>${m.nav.map((n, i) => `<div class="rounded px-2 py-1.5 text-sm ${i === 0 ? "bg-white/10 text-white" : "text-neutral-400"}"># ${esc(n.toLowerCase().replace(/\s+/g, "-"))}</div>`).join("")}</div>
@@ -154,7 +174,7 @@ function chat(m: Spec) {
 <div class="flex gap-3"><div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-${a}-500 text-xs font-bold text-white">${initials(m.appName)}</div><div class="min-w-0 flex-1"><div class="text-sm"><span class="font-semibold text-${a}-300">${esc(m.appName)}</span> <span class="rounded bg-[#5865f2] px-1 text-[10px] font-semibold text-white">BOT</span> <span class="text-xs text-neutral-500">Today at 9:02 AM</span></div>
 <div class="mt-1 max-w-[520px] rounded border-l-4 border-${a}-500 bg-[#2b2d31] p-3"><div class="mb-2 text-sm font-semibold text-white">${esc(m.heading)}</div>
 <div class="mb-3 grid grid-cols-3 gap-2">${m.stats.map((st) => `<div><div class="text-[11px] font-semibold text-neutral-400">${esc(st.label)}</div><div class="text-sm text-white">${esc(st.value)}</div></div>`).join("")}</div>
-<div class="space-y-1 text-sm">${m.items.slice(0, 4).map((it) => `<div>${icon[it.status]} <span class="font-semibold text-white">${esc(it.title)}</span> <span class="text-neutral-400">${esc(it.subtitle)}</span></div>`).join("")}</div>
+<div class="space-y-1 text-sm">${m.items.slice(0, 4).map((it) => `<div class="flex items-baseline gap-2"><span class="inline-block h-2 w-2 shrink-0 translate-y-[-1px] rounded-full bg-${STATUS[it.status]}-400"></span><span class="truncate"><span class="font-semibold text-white">${esc(it.title)}</span> <span class="text-neutral-400">${esc(it.subtitle)}</span></span></div>`).join("")}</div>
 ${m.callout ? `<div class="mt-2 text-xs text-neutral-500">${esc(m.callout)}</div>` : ""}</div></div></div>
 </div>
 <div class="m-4 mt-0 rounded-lg bg-[#383a40] px-4 py-2.5 text-sm text-neutral-500">Message #${esc(m.nav[0].toLowerCase().replace(/\s+/g, "-"))}</div>
@@ -183,7 +203,8 @@ const RENDER: Record<MockSpec["kit"], (m: Spec) => string> = { dashboard, cards,
 
 export function renderMock(spec: MockSpec): string {
   const m = normalize(spec);
-  return RENDER[m.kit](m).replace(/\n/g, "");
+  // Tag the root so MockFrame can match the backdrop to the kit and accent.
+  return RENDER[m.kit](m).replace(/\n/g, "").replace(/^<div /, `<div data-kit="${m.kit}" data-accent="${m.accent}" `);
 }
 
 // Reference specs: shown on /preview/kits and used as the example in the agent prompt.

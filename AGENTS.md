@@ -13,6 +13,8 @@ A tool for larping at networking events: it listens to you describe projects you
     - `geist.tsx`: Vercel/Next.js dark style (projects shown as deployment cards).
     - `parts.tsx`: shared pieces (`MockFrame`, `ProjectDetails`, `Mermaid`, `CommitGraph`, `Skeleton`, icons).
     - `index.ts`: maps `templateId` to its component.
+  - `lib/prompts/portfolio-guide.md`: the writing standard (naming, hero, project cards, mock data). It's included in every LLM prompt, so edit it to change how portfolios read.
+  - `lib/mock-kits.ts`: six hand-built mock UI kits (dashboard, cards, phone, terminal, chat, extension). The LLM fills a `MockSpec`, and `renderMock` escapes it into HTML. Preview them at `/preview/kits`.
   - `lib/fixtures.ts`: the sample portfolio ("Sam Rivera", 3 projects) plus `samplePortfolio(template, stage)`.
   - `app/preview`: every template at every build stage. Run it with `npm run dev:web` and open `/preview`.
   - `app/p/[slug]`: the public portfolio. It polls `/api/p/[slug]` every 1.5s. `/p/demo-backup` always serves the fixture, and so does any slug when there is no `DATABASE_URL`.

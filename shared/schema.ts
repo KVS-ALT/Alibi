@@ -10,7 +10,7 @@ export const Claims = z.object({
   skills: z.array(z.string()),
   // saidAbout = verbatim-ish claims from the transcript
   projects: z.array(
-    z.object({ id: z.string(), name: z.string(), saidAbout: z.array(z.string()) }),
+    z.object({ id: z.string(), name: z.string(), saidAbout: z.array(z.string()), platform: z.string().optional() }),
   ),
   // the OTHER person's email, if mentioned
   contactEmail: z.string().optional(),

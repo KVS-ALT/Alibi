@@ -101,7 +101,7 @@ async function build(session:LiveSession){
   const claims=Claims.parse({
    ...(extracted.speakerName?{speakerName:extracted.speakerName}:{}),...(extracted.role?{role:extracted.role}:{}),
    vibe:session.claims?.vibe??extracted.vibe,skills:extracted.skills,
-   projects:extracted.projects.map(p=>({id:projectId(p.name),name:p.name,saidAbout:p.saidAbout})),
+   projects:extracted.projects.map(p=>({id:projectId(p.name),name:p.name,saidAbout:p.saidAbout,platform:p.platform})),
    ...(extracted.contactEmail&&transcript.toLowerCase().includes(extracted.contactEmail.toLowerCase())?{contactEmail:extracted.contactEmail}:{}),
   });
   session.claims=claims;

@@ -1,4 +1,7 @@
-import { createHash } from 'node:crypto';
+import { createHash,randomUUID } from 'node:crypto';
+import { lstat,mkdir,open,readFile,rename,unlink } from 'node:fs/promises';
+import { dirname,isAbsolute } from 'node:path';
+import { z } from 'zod';
 
 export interface EmailHandoffInput {
   eventId: string;
@@ -9,8 +12,24 @@ export interface EmailHandoffInput {
   explicitRecipient: boolean;
   recipient: string;
   /** Backend constructs these from the successful artifact, never from transcript addresses. */
-  projectUrl: string;
+  projectUrl?: string;
+  sourceArchive?:SourceArchiveAttachment;
   summary: string;
+}
+export interface SourceArchiveAttachment {filename:'prototype-source.zip';content_type:'application/zip';content_base64:string}
+const maxArchiveBytes=2*1024*1024;
+function validSourceArchive(value:unknown):value is SourceArchiveAttachment {
+ if(!value||typeof value!=='object')return false;
+ const item=value as Record<string,unknown>;
+ if(Object.keys(item).some(key=>!['filename','content_type','content_base64'].includes(key))||item.filename!=='prototype-source.zip'||item.content_type!=='application/zip'||typeof item.content_base64!=='string'||item.content_base64.length>Math.ceil(maxArchiveBytes/3)*4||!item.content_base64.length||!/^[A-Za-z0-9+/]*={0,2}$/.test(item.content_base64))return false;
+ const bytes=Buffer.from(item.content_base64,'base64');
+ return bytes.length>=4&&bytes.length<=maxArchiveBytes&&bytes.subarray(0,4).equals(Buffer.from([80,75,3,4]))&&bytes.toString('base64')===item.content_base64;
+}
+/** Only call with the latest validated server-generated archive; never a browser upload. */
+export function createSourceArchiveAttachment(bytes:Uint8Array):SourceArchiveAttachment {
+ if(bytes.byteLength<4||bytes.byteLength>maxArchiveBytes)throw new Error('Source ZIP must be at most 2 MiB');
+ const result:SourceArchiveAttachment={filename:'prototype-source.zip',content_type:'application/zip',content_base64:Buffer.from(bytes).toString('base64')};
+ if(!validSourceArchive(result))throw new Error('Invalid source ZIP');return result;
 }
 export interface EmailHandoffResult {
   status: 'ready' | 'queued' | 'blocked' | 'unknown';
@@ -35,7 +54,7 @@ export interface EmailConfig {
 export interface EmailTransportRequest {
   url: string;
   headers: Record<string, string>;
-  body: { to: string; subject: string; text: string };
+  body: { to: string; subject: string; text: string;attachments?:SourceArchiveAttachment[] };
 }
 export type EmailTransport = (request: EmailTransportRequest) => Promise<{ status: number; body: unknown; headers?: Record<string, string> }>;
 export interface EmailOutboxEntry {
@@ -103,14 +122,106 @@ export function createMemoryEmailOutbox(): EmailOutbox {
   };
 }
 
-/** No global fetch fallback: callers must explicitly supply the server transport. */
-export function createAgentboxdTransport(fetcher: typeof fetch): EmailTransport {
+const outboxEntrySchema=z.object({key:z.string().regex(/^larp-email-[a-f0-9]{64}$/),scopeKey:z.string().regex(/^[a-f0-9]{64}$/),payloadHash:z.string().regex(/^[a-f0-9]{64}$/),eventId:z.string().min(1).max(200),sessionId:z.string().min(1).max(200),projectId:z.string().min(1).max(200),projectVersion:z.number().int().positive(),recipient:z.string().max(254).refine(validMailbox),createdAt:z.number().int().nonnegative()}).strict();
+const outboxResultSchema=z.object({status:z.enum(['ready','queued','blocked','unknown']),notSent:z.literal(true).optional(),reason:z.string().max(200).optional(),messageId:z.string().max(200).optional(),retryAfterSeconds:z.number().int().nonnegative().max(86400).optional()}).strict();
+const outboxStateSchema=z.object({version:z.literal(1),rows:z.array(z.object({entry:outboxEntrySchema,result:outboxResultSchema}).strict()).max(1000)}).strict();
+type OutboxState=z.infer<typeof outboxStateSchema>;
+/**
+ * Durable single-host outbox, not a distributed production database. Reservations are
+ * fsynced before transport and never automatically expire: unknown sends must not be
+ * duplicated after restart. Capacity exhaustion or a stale crash lock fails closed.
+ * Construction is lazy: no file is read or created until an approved handoff reserves.
+ */
+export function createFileEmailOutbox(filePath:string):EmailOutbox {
+ if(!isAbsolute(filePath)||!filePath.endsWith('.json'))throw new Error('Email outbox requires an absolute private JSON file path');
+ const lockPath=filePath+'.lock';
+ async function locked<T>(mutate:(state:OutboxState)=>Promise<{value:T;write:boolean}>):Promise<T>{
+  await mkdir(dirname(filePath),{recursive:true,mode:0o700});
+  const lock=await open(lockPath,'wx',0o600);
+  let temporary:string|undefined;
+  try{
+   let state:OutboxState={version:1,rows:[]};
+   try{const info=await lstat(filePath);if(!info.isFile()||info.isSymbolicLink()||info.size>2*1024*1024)throw new Error('Invalid outbox file');state=outboxStateSchema.parse(JSON.parse(await readFile(filePath,'utf8')));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+   const {value,write}=await mutate(state);
+   if(write){
+    const serialized=JSON.stringify(outboxStateSchema.parse(state));if(Buffer.byteLength(serialized)>2*1024*1024)throw new Error('Email outbox full');
+    temporary=filePath+'.'+randomUUID()+'.tmp';const target=await open(temporary,'wx',0o600);
+    try{await target.writeFile(serialized,'utf8');await target.sync();}finally{await target.close();}
+    await rename(temporary,filePath);temporary=undefined;
+   }
+   return value;
+  }finally{
+   if(temporary)await unlink(temporary).catch(()=>{});
+   await lock.close();await unlink(lockPath);
+  }
+ }
+ return {durable:true,
+  async reserve(entry,limits){
+   const valid=outboxEntrySchema.parse(entry);
+   return locked<EmailReservation>(async state=>{
+    const existing=state.rows.find(row=>row.entry.key===valid.key);
+    if(existing)return {value:existing.entry.payloadHash===valid.payloadHash?{kind:'existing',result:{...existing.result}}:{kind:'blocked',reason:'idempotency_conflict'},write:false};
+    if(state.rows.some(row=>row.entry.scopeKey===valid.scopeKey&&row.entry.recipient!==valid.recipient))return {value:{kind:'blocked',reason:'recipient_locked'},write:false};
+    const dayStart=Math.floor(valid.createdAt/86400000)*86400000;
+    const count=(since:number,sessionOnly:boolean)=>state.rows.filter(row=>row.entry.createdAt>=since&&(!sessionOnly||row.entry.sessionId===valid.sessionId)).length;
+    if(count(dayStart,true)>=limits.perSessionPerDay||count(dayStart,false)>=limits.globalPerDay)return {value:{kind:'blocked',reason:'rate_limited',retryAfterSeconds:Math.ceil((dayStart+86400000-valid.createdAt)/1000)},write:false};
+    if(count(valid.createdAt-60000,true)>=limits.perSessionPerMinute||count(valid.createdAt-300000,false)>=limits.globalPerFiveMinutes)return {value:{kind:'blocked',reason:'rate_limited',retryAfterSeconds:300},write:false};
+    if(state.rows.length>=1000)return {value:{kind:'blocked',reason:'outbox_full'},write:false};
+    state.rows.push({entry:valid,result:{status:'unknown',reason:'in_progress'}});
+    return {value:{kind:'reserved'},write:true};
+   });
+  },
+  async complete(key,result){await locked(async state=>{const row=state.rows.find(value=>value.entry.key===key);if(!row)throw new Error('Missing outbox reservation');row.result=outboxResultSchema.parse(result);return {value:undefined,write:true};});},
+ };
+}
+
+export interface AgentboxdTransportOptions {
+  maxAttempts?:number;
+  timeoutMs?:number;
+  maxRetryDelayMs?:number;
+  now?:()=>number;
+  sleep?:(ms:number)=>Promise<void>;
+}
+function retryAfterSeconds(headers:Record<string,string>|undefined,payload:unknown,now:number):number|undefined {
+ const header=headers?.['retry-after']?.trim();
+ const details=object(object(object(payload).error).details);
+ const value=header&&/^\d+(?:\.\d+)?$/.test(header)?Number(header):header?Math.ceil((Date.parse(header)-now)/1000):Number(details.retry_after_seconds);
+ return Number.isFinite(value)&&value>=0?Math.min(Math.ceil(value),86400):undefined;
+}
+async function boundedResponse(response:Response):Promise<unknown>{
+ if(Number(response.headers.get('content-length')??0)>32768){await response.body?.cancel();throw new Error('Provider response exceeds limit');}
+ if(!response.body)return {};
+ const reader=response.body.getReader();const chunks:Uint8Array[]=[];let size=0;
+ try{while(true){const next=await reader.read();if(next.done)break;size+=next.value.byteLength;if(size>32768){await reader.cancel();throw new Error('Provider response exceeds limit');}chunks.push(next.value);}}finally{reader.releaseLock();}
+ const bytes=new Uint8Array(size);let position=0;for(const chunk of chunks){bytes.set(chunk,position);position+=chunk.byteLength;}
+ try{return JSON.parse(new TextDecoder().decode(bytes));}catch{throw new Error('Invalid provider response');}
+}
+/** Official fixed-host HTTP transport. No global fetch, automatic key generation, or ambiguous network retries. */
+export function createAgentboxdTransport(fetcher: typeof fetch,options:AgentboxdTransportOptions={}): EmailTransport {
+  const boundedInt=(value:number|undefined,fallback:number,min:number,max:number)=>Number.isFinite(value)?Math.min(max,Math.max(min,Math.floor(value!))):fallback;
+  const maxAttempts=boundedInt(options.maxAttempts,2,1,3);
+  const timeoutMs=boundedInt(options.timeoutMs,10000,100,10000);
+  const maxDelay=boundedInt(options.maxRetryDelayMs,2000,0,5000);
+  const now=options.now??Date.now,sleep=options.sleep??(ms=>new Promise(done=>setTimeout(done,ms)));
   return async request => {
-    const response = await fetcher(request.url, {
-      method: 'POST', redirect: 'error', headers: request.headers,
-      body: JSON.stringify(request.body), signal: AbortSignal.timeout(10_000),
-    });
-    return { status: response.status, body: await response.json(), headers: { 'retry-after': response.headers.get('retry-after') ?? '' } };
+    const endpoint=new URL(request.url);
+    if(endpoint.origin!=='https://api.agentboxd.com'||!/^\/v1\/inboxes\/[^/]+\/messages\/send$/.test(endpoint.pathname)||endpoint.search||endpoint.hash||endpoint.username||endpoint.password)throw new Error('Unapproved email endpoint');
+    if(!/^larp-email-[a-f0-9]{64}$/.test(request.headers['Idempotency-Key']??''))throw new Error('Stable email idempotency key required');
+    const attachments=request.body.attachments;
+    if(attachments!==undefined&&(!Array.isArray(attachments)||attachments.length!==1||!validSourceArchive(attachments[0])))throw new Error('Unapproved email attachment');
+    const body=JSON.stringify(request.body);if(Buffer.byteLength(body)>Math.ceil(maxArchiveBytes/3)*4+8192||Object.keys(request.body).some(key=>!['to','subject','text','attachments'].includes(key)))throw new Error('Email payload exceeds approved shape');
+    // Snapshot once: every permitted retry uses exactly the same recipient, body and key.
+    const headers={...request.headers};
+    for(let attempt=0;;attempt++){
+      const response=await fetcher(request.url,{method:'POST',redirect:'error',headers:{...headers},body,signal:AbortSignal.timeout(timeoutMs)});
+      const payload=await boundedResponse(response),responseHeaders={'retry-after':response.headers.get('retry-after')??''};
+      const code=object(object(payload).error).code;
+      const seconds=retryAfterSeconds(responseHeaders,payload,now());
+      const delay=response.status===409&&code==='idempotency_in_progress'?Math.max(1000,(seconds??1)*1000):response.status===429&&code==='rate_limited'&&seconds!==undefined?seconds*1000:undefined;
+      // Daily/quota/recipient/422 refusals and network/5xx uncertainty never retry here.
+      if(attempt+1>=maxAttempts||delay===undefined||delay>maxDelay)return {status:response.status,body:payload,headers:responseHeaders};
+      await sleep(delay);
+    }
   };
 }
 
@@ -125,22 +236,23 @@ export function createEmailHandoff(config: EmailConfig = {}, dependencies: Email
     if (Number.isSafeInteger(value) && value! > 0) limits[name] = Math.min(value!, defaults[name]);
   }
   async function handoff(input: EmailHandoffInput): Promise<EmailHandoffResult> {
-    if (!input.ready) return blocked('project_not_ready');
-    if (!input.explicitRecipient) return blocked('recipient_consent_required');
+    if (input.ready!==true) return blocked('project_not_ready');
+    if (input.explicitRecipient!==true) return blocked('recipient_consent_required');
     const recipient = mailbox(input.recipient);
     if (!validMailbox(recipient)) return blocked('invalid_recipient');
     if (![input.eventId, input.sessionId, input.projectId].every(value => typeof value === 'string' && value.length > 0 && value.length <= 200)
       || !Number.isSafeInteger(input.projectVersion) || input.projectVersion < 1
       || typeof input.summary !== 'string' || input.summary.length > 2000 || input.summary.includes('\0')) return blocked('invalid_handoff');
-    try {
-      const url = new URL(input.projectUrl);
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return blocked('invalid_project_url');
+    if(input.sourceArchive!==undefined){if(!validSourceArchive(input.sourceArchive))return blocked('invalid_source_archive');}
+    else try {
+      const url = new URL(input.projectUrl??'');
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.href.length>2000) return blocked('invalid_project_url');
     } catch { return blocked('invalid_project_url'); }
     if (config.enabled !== true) return { status: 'ready', notSent: true, reason: 'email_disabled' };
     if (!config.apiKey || !config.inboxId || !dependencies.transport) return blocked('email_unconfigured');
     if (!allowed.has(recipient)) return blocked('recipient_not_allowed');
     if (!outbox.durable) return blocked('durable_outbox_required');
-    const body = { to: recipient, subject: 'Your prototype is ready', text: `${input.summary.trim()}\n\nOpen your prototype: ${input.projectUrl}` };
+    const body:EmailTransportRequest['body'] = { to: recipient, subject: 'Your prototype is ready', text: `${input.summary.trim()}\n\n${input.sourceArchive?'Attached: prototype-source.zip':'Open your prototype: '+input.projectUrl}`,...(input.sourceArchive?{attachments:[{...input.sourceArchive}]}:{}) };
     const scopeKey = hash([input.sessionId, input.projectId]);
     const key = `larp-email-${hash([scopeKey, input.projectVersion])}`;
     let reservation: EmailReservation;
@@ -162,8 +274,8 @@ export function createEmailHandoff(config: EmailConfig = {}, dependencies: Email
         const code = object(payload.error).code;
         const known = new Set(['rate_limited', 'org_daily_limit_exceeded', 'daily_send_limit_exceeded', 'plan_limit_emails', 'idempotency_in_progress', 'idempotency_key_reused', 'recipient_suppressed', 'recipient_blocked', 'insufficient_permissions', 'api_key_expired', 'inbox_paused', 'workspace_stopped']);
         const reason = typeof code === 'string' && known.has(code) ? code : 'provider_refused';
-        const retry = Number(response.headers?.['retry-after']);
-        result = response.status === 409 ? { status: 'unknown', reason } : blocked(reason, Number.isSafeInteger(retry) && retry > 0 ? Math.min(retry, 86400) : undefined);
+      const retry = retryAfterSeconds(response.headers,response.body,now());
+        result = response.status === 409 ? { status: 'unknown', reason } : blocked(reason, retry);
       } else result = { status: 'unknown', reason: 'delivery_unknown' };
     } catch { result = { status: 'unknown', reason: 'delivery_unknown' }; }
     try { await outbox.complete(key, result); } catch { return { status: 'unknown', reason: 'outbox_unavailable' }; }

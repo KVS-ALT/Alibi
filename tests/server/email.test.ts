@@ -68,7 +68,7 @@ describe('optional email handoff', () => {
   it('adapts an explicitly injected fetch implementation without using global fetch', async () => {
     const fetcher = vi.fn(async (_url: Parameters<typeof fetch>[0], _init?: RequestInit) => new Response(JSON.stringify({ id: 'm1', status: 'queued' }), { status: 202 }));
     const transport = createAgentboxdTransport(fetcher);
-    const result = await transport({ url: 'https://api.agentboxd.com/v1/inboxes/i/messages/send', headers: { Authorization: 'Bearer test-secret' }, body: { to: 'owner@example.com', subject: 'Ready', text: 'Ready' } });
+    const result = await transport({ url: 'https://api.agentboxd.com/v1/inboxes/i/messages/send', headers: { Authorization: 'Bearer test-secret','Idempotency-Key':'larp-email-'+'a'.repeat(64) }, body: { to: 'owner@example.com', subject: 'Ready', text: 'Ready' } });
     expect(result).toMatchObject({ status: 202, body: { id: 'm1' } });
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'POST', redirect: 'error' });

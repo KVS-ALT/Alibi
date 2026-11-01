@@ -31,7 +31,12 @@ export function createHttpSpeechmaticsProxyTransport(fetcher: typeof fetch = fet
   const base = (id: string) => `/api/sessions/${encodeURIComponent(id)}/speech`;
   async function post(url: string, body: BodyInit, signal: AbortSignal, headers: HeadersInit = { 'Content-Type': 'application/json' }) {
     const response = await bounded(fetcher(url, { method: 'POST', credentials: 'same-origin', redirect: 'error', signal, headers, body }), signal, 20_000);
-    if (!response.ok) throw new Error(safeError);
+    if (!response.ok) {
+      // Surface the server's reason code (e.g. stream_capacity) for debugging; the message stays generic.
+      const body = await response.json().catch(() => null) as { code?: unknown; error?: { code?: unknown } } | null;
+      const code = body?.code ?? body?.error?.code;
+      throw Object.assign(new Error(safeError), { code: typeof code === 'string' && /^[a-z_]{1,64}$/i.test(code) ? code.toLowerCase() : `http_${response.status}` });
+    }
     return bounded(response.json(), signal, 20_000) as Promise<{ ok?: boolean; streamId?: unknown }>;
   }
   return {
@@ -122,7 +127,7 @@ export function createSpeechmaticsProxyCapture(options: ProxyCaptureOptions, dep
       if (!valid(epoch)) { subscription.close(); return; } events = subscription;
       const acquired = await openAudio(bytes => enqueue(bytes, epoch), abort.signal);
       if (!valid(epoch)) { acquired.stop(); return; } source = acquired; update({ status: 'listening', starting: false });
-    } catch { if (valid(epoch)) fail('capture_unavailable'); }
+    } catch (error) { if (valid(epoch)) fail((error as { code?: string }).code ?? 'capture_unavailable'); }
   }
   async function flush() {
     if (!live || !identity || !source) return;

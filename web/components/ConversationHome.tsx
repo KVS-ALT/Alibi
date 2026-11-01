@@ -137,7 +137,7 @@ export default function ConversationHome() {
  const busy = creating || capture.starting || ending;
  const Template = portfolio ? TEMPLATES[portfolio.templateId] : null;
  const label = ending ? "Finishing capture" : busy ? "Connecting" : listening ? "Mute microphone" : muted ? "Resume microphone" : "Start microphone";
- const notice = capture.error || error || (availability === "unavailable" ? "Service not ready." : undefined);
+ const notice = (capture.error ? `${capture.error}${capture.errorCode ? ` (${capture.errorCode})` : ""}` : undefined) || error || (availability === "unavailable" ? "Service not ready." : undefined);
  return (
   <div className="min-h-svh bg-[#fbfafc] text-[#3c3345]">
    {Template && portfolio ? <div className="pb-32"><Template portfolio={portfolio} /></div> : <main aria-label="Conversation preview" className="min-h-svh" />}

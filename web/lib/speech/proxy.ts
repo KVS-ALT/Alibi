@@ -62,6 +62,7 @@ export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependen
   }
   function finish(stream: Stream, code: string) {
     if (stream.phase === 'ended') return;
+    if (code !== 'ended') console.warn(`[speech] stream ${stream.id.slice(0, 8)} ended: ${code}`);
     stream.phase = 'ended'; stream.reason = code; stream.abort.abort();
     if (stream.deadline) clearTimeout(stream.deadline); if (stream.handshake) clearTimeout(stream.handshake);
     dependencies?.tokenProvider.cancelSession(stream.sessionId);
@@ -76,6 +77,11 @@ export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependen
     return stream?.id === identity.streamId ? stream : undefined;
   };
   async function start(input: { sessionId: string; consented: boolean; signal?: AbortSignal }): Promise<SpeechProxyResult> {
+    const result = await startInner(input);
+    if (!result.ok) console.warn(`[speech] start refused: ${result.code}`);
+    return result;
+  }
+  async function startInner(input: { sessionId: string; consented: boolean; signal?: AbortSignal }): Promise<SpeechProxyResult> {
     if (!isConfigured()) return fail('provider_disabled');
     if (input.consented !== true || !/^[a-z0-9_-]{1,200}$/i.test(input.sessionId)) return fail('consent_required');
     if (input.signal?.aborted) return fail('cancelled');
@@ -131,7 +137,7 @@ export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependen
                 emit(stream, { type: 'segment', segment });
               }
             } else if (value.message === 'EndOfUtterance' && value.forced === true) stream.utteranceWait?.();
-            else if (value.message === 'Error') finish(stream, 'provider_error');
+            else if (value.message === 'Error') { console.warn('[speech] provider error', event.data); finish(stream, 'provider_error'); }
           } catch { finish(stream, 'invalid_provider_response'); }
         };
         socket.onerror = () => finish(stream, 'connection_error'); socket.onclose = () => finish(stream, 'connection_closed');

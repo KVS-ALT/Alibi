@@ -10,7 +10,7 @@ type JobEvent={type:'stage';progress:Progress}|{type:'result';result:PackageResu
 interface Job {id:string;events:JobEvent[];listeners:Set<ServerResponse>;done:boolean;abort:AbortController}
 interface Session {id:string;owner:string;expiresAt:number;jobs:Map<string,Job>;latest?:PackageResult;version:number}
 export interface ServerOptions {runner?:JobRunner;staticDir?:string;ttlMs?:number;maxSessions?:number;maxActiveJobs?:number;now?:()=>number;secureCookies?:boolean;rateLimit?:number}
-const constantEqual=(a:string,b:string)=>a.length===b.length&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
+const constantEqual=(a:string,b:string)=>{const first=Buffer.from(a),second=Buffer.from(b);return first.length===second.length&&timingSafeEqual(first,second);};
 function ownerCookie(req:IncomingMessage){return req.headers.cookie?.split(';').map(v=>v.trim()).find(v=>v.startsWith('larp_owner='))?.slice(11)??'';}
 async function readJson(req:IncomingMessage){
  if(!req.headers['content-type']?.startsWith('application/json'))throw new HttpError(415,'JSON_REQUIRED','Use application/json.');

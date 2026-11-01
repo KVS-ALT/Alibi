@@ -5,13 +5,7 @@ import { validateUiSpec } from '../generation';
 import { Preview } from '../ui/Preview';
 import { mountStandalone } from './standalone';
 import previewCss from '../ui/preview.css?raw';
-import previewSource from '../ui/Preview.tsx?raw';
-import templatesSource from '../templates/index.ts?raw';
-import presentationSource from '../templates/presentation.ts?raw';
-import contractsSource from '../contracts/index.ts?raw';
-import appSource from './SourceApp.tsx?raw';
 import license from '../../LICENSE?raw';
-import manifest from '../../package.json';
 
 const safeJson = (value: unknown) => JSON.stringify(value, null, 2).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 function requireValid(spec: UiSpec): UiSpec {
@@ -20,81 +14,82 @@ function requireValid(spec: UiSpec): UiSpec {
   return result.data;
 }
 
-/** Render the same React component used by the live preview, with no event state. */
+/** The outer builder uses React; exported files contain only plain markup and JS. */
 function screenMarkup(spec: UiSpec, screenId: string): string {
   const state: PreviewState = { sessionId: spec.sessionId, activeScreenId: screenId, values: {}, forms: {}, filters: {}, submitted: {} };
   return renderToStaticMarkup(createElement(Preview, { spec, state, onAction: () => {}, onFieldChange: () => {} }));
 }
-
-export function renderStandaloneHtml(input: UiSpec): string {
-  const spec = requireValid(input);
+const stylesheet = 'body{margin:0}#app{min-height:100vh}\n' + previewCss;
+function projectScript(): string {
+  return '// Local demo interactions. No form data is sent to a server or database.\n' +
+    '(' + mountStandalone.toString() + ')(JSON.parse(document.querySelector(\'script#prototype-config[type="application/json"]\').textContent));\n';
+}
+function renderDocument(spec: UiSpec, selfContained: boolean): string {
   const markup = spec.screens.map(screen => ({ id: screen.id, html: screenMarkup(spec, screen.id) }));
   return [
     '<!doctype html>',
     '<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
     '<title>Exported demo prototype</title>',
-    '<style>body{margin:0}#app{min-height:100vh}' + previewCss + '</style></head><body>',
-    '<main id="app">' + markup[0].html + '</main>',
+    selfContained ? '<style>' + stylesheet + '</style>' : '<link rel="stylesheet" href="./styles.css">',
+    '</head><body><main id="app">' + markup[0].html + '</main>',
     ...markup.map(screen => '<template id="screen-' + screen.id + '">' + screen.html + '</template>'),
     '<script id="prototype-config" type="application/json">' + safeJson(spec) + '</script>',
-    '<script>\n(' + mountStandalone.toString() + ')(JSON.parse(document.getElementById("prototype-config").textContent));\n</script>',
+    selfContained ? '<script>\n' + projectScript() + '</script>' : '<script src="./app.js" defer></script>',
     '</body></html>',
   ].join('\n');
 }
 
+/** Single-file HTML: no linked script, stylesheet, module loader, or network access. */
+export function renderStandaloneHtml(input: UiSpec): string { return renderDocument(requireValid(input), true); }
+/** Primary editable source entry point. Classic local scripts work from file://. */
+export function renderProjectHtml(input: UiSpec): string { return renderDocument(requireValid(input), false); }
+
 const readme = [
-  '# Your exported prototype',
+  '# Your plain HTML, CSS and JavaScript prototype',
   '',
-  'Open index.html directly in a modern browser. It works offline with no installation, account, API key, or server.',
+  'Extract the ZIP and open index.html directly in a modern browser. No installation, package manager, framework, account, API key, local server, or build step is required. Keep index.html, styles.css, and app.js together. standalone.html is the same experience in one self-contained file.',
   '',
-  'The standalone page contains the exact reviewed template markup and stylesheet used by the project preview, plus readable local JavaScript for navigation, search, category filters, browser form validation, and confirmation messages. The export starts a fresh interaction session: preview form entries, filters, and receipts are not copied. Form details stay in memory and disappear on reload. Nothing is sent to a server. All listings are synthetic demo data.',
+  '## Files',
   '',
-  '## Editable React source',
+  '- index.html: actual template markup, screen templates, and embedded configuration.',
+  '- styles.css: the exact reviewed template stylesheet used by the preview.',
+  '- app.js: plain JavaScript for navigation, search, category filters, browser form validation, and local confirmation messages.',
+  '- configuration.json: the exact configuration snapshot used to produce this project.',
+  '- config.json: a compatibility copy of configuration.json.',
+  '- standalone.html: the complete HTML/CSS/JavaScript experience in one file.',
+  '- ROADMAP.md: remaining product and integration work.',
   '',
-  'The source/ folder is a complete Vite + React project with the actual Preview.tsx component, template catalog, presentation helper, stylesheet, typed contracts, local action adapter, and exact configuration used for this export. The root config.json is the same configuration for inspection or handoff.',
+  'The page uses embedded JSON so direct-open file:// browsing does not need to fetch a JSON file or load JavaScript modules. The export starts a fresh interaction session: preview form entries, filters, and receipts are not copied. Form details stay in memory and disappear on reload. All listings are synthetic demo data.',
   '',
-  'To develop it, install Node.js 22.12 or newer, then run:',
+  '## Editing',
   '',
-  '    cd source',
-  '    npm install',
-  '    npm run dev',
+  'Edit index.html, styles.css and app.js directly in a text editor. Screen markup is stored in the HTML template elements. Keep the embedded prototype-config JSON and screen/component identifiers aligned with any interaction changes. The separate JSON files are handoff snapshots: editing configuration.json alone does not regenerate visible markup or rewrite index.html. Request a new export from the builder when you want a complete regenerated project.',
   '',
-  'Edit source/config.json to change the source project; run npm run build to create source/dist/. Changes to a config.json file do not automatically rewrite the already exported standalone index.html. Generate another export from the builder or build the editable source when the configuration changes. Dependency installation requires an internet connection; opening the standalone page does not.',
+  '## Persistence and server integration',
   '',
-  '## Demo limits',
+  'This export is not connected to Supabase or any database. Forms do not send email, charge money, book appointments, authenticate users, or create server records. It contains no provider, database admin, or service-role credentials.',
   '',
-  'This export does not send email, take payments, book appointments, authenticate users, or connect to a production backend. Review all copy and replace demo data before using the source as a product. See ROADMAP.md for the remaining work.',
+  'To add persistence, host the project over HTTPS and connect app.js to your authorized product server. The server must own credentials, authentication, database policies and validation. Never paste a service-role key, database password, or provider secret into these files. Add a connected-service claim only after that integration has actually been configured and tested.',
+  '',
+  'Review all generated copy and replace synthetic data before using this source as a product. Deployment and backend integration are not included.',
   '',
 ].join('\n');
 
 export function createProjectFiles(input: UiSpec): Record<string, string> {
   const spec = requireValid(input), config = JSON.stringify(spec, null, 2);
   return {
-    'index.html': renderStandaloneHtml(spec),
+    'index.html': renderDocument(spec, false),
+    'styles.css': stylesheet,
+    'app.js': projectScript(),
+    'configuration.json': config,
     'config.json': config,
-    'README.md': readme + '\nReviewed template: ' + spec.templateId + ' (version ' + spec.templateVersion + '). Generated with the Demo generator.\n',
-    'ROADMAP.md': '# Remaining roadmap\n\n- Review generated copy and replace synthetic data.\n- Verify accessibility and responsive layouts on target devices.\n- Connect forms and actions to an authorized backend with server validation.\n- Add persistence, email delivery, authentication, or payments only if your product needs them.\n- Test and deploy with your hosting provider. Deployment is not included.\n',
+    'standalone.html': renderDocument(spec, true),
+    'README.md': readme + '\nReviewed template: ' + spec.templateId + ' (version ' + spec.templateVersion + ').\n',
+    'ROADMAP.md': '# Remaining roadmap\n\n- Review generated copy and replace synthetic data.\n- Verify accessibility and responsive layouts on target devices.\n- Connect forms to your authorized product server if persistence is required.\n- Keep database credentials, service-role keys and provider secrets on the server.\n- Add authentication, database policies, persistence, email delivery or payments only when configured and tested.\n- Test and deploy with your hosting provider. Deployment and backend integration are not included.\n',
     'LICENSE': license,
-    'source/config.json': config,
-    'source/package.json': JSON.stringify({
-      name: 'exported-demo-prototype', version: '1.0.0', private: true, type: 'module',
-      scripts: { dev: 'vite --host 127.0.0.1', build: 'tsc --noEmit && vite build', preview: 'vite preview --host 127.0.0.1' },
-      dependencies: { react: manifest.dependencies.react, 'react-dom': manifest.dependencies['react-dom'] },
-      devDependencies: { '@types/react': manifest.devDependencies['@types/react'], '@types/react-dom': manifest.devDependencies['@types/react-dom'], '@vitejs/plugin-react': manifest.devDependencies['@vitejs/plugin-react'], typescript: manifest.devDependencies.typescript, vite: manifest.devDependencies.vite },
-    }, null, 2),
-    'source/index.html': '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Your demo prototype</title><style>body{margin:0}</style></head><body><main id="root"></main><script type="module" src="/src/main.tsx"></script></body></html>\n',
-    'source/tsconfig.json': JSON.stringify({ compilerOptions: { target: 'ES2022', lib: ['ES2022', 'DOM', 'DOM.Iterable'], module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noEmit: true, skipLibCheck: true, esModuleInterop: true, resolveJsonModule: true }, include: ['src', 'vite.config.ts'] }, null, 2),
-    'source/vite.config.ts': "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\nexport default defineConfig({ plugins: [react()], base: './' });\n",
-    'source/src/main.tsx': "import { createElement } from 'react';\nimport { createRoot } from 'react-dom/client';\nimport { SourceApp } from './export/SourceApp';\nimport type { UiSpec } from './contracts';\nimport config from '../config.json';\ncreateRoot(document.getElementById('root')!).render(createElement(SourceApp, { spec: config as UiSpec }));\n",
-    'source/src/export/SourceApp.tsx': appSource,
-    'source/src/ui/Preview.tsx': previewSource,
-    'source/src/ui/preview.css': previewCss,
-    'source/src/templates/index.ts': templatesSource,
-    'source/src/templates/presentation.ts': presentationSource,
-    'source/src/contracts/index.ts': contractsSource,
-    'source/LICENSE': license,
   };
 }
+
 
 function crc32(data: Uint8Array) {
   let crc = 0xffffffff;
@@ -133,4 +128,5 @@ function download(data: BlobPart, filename: string, type: string) {
 }
 export function downloadConfig(spec: UiSpec): void { download(JSON.stringify(requireValid(spec), null, 2), 'prototype-config.json', 'application/json'); }
 export function downloadProject(spec: UiSpec): void { download(createProjectArchive(spec).slice().buffer, 'prototype-source.zip', 'application/zip'); }
+export function downloadStandaloneHtml(spec: UiSpec): void { download(renderStandaloneHtml(spec), 'prototype.html', 'text/html'); }
 

@@ -90,17 +90,17 @@ describe('the exported project', () => {
     dom.window.close();
   });
 
-  it('includes the actual renderer source, exact config, stylesheet, dependency manifest and handoff', async () => {
+  it('includes actual template markup, exact config and plain editable assets without build dependencies', async () => {
     const spec = await fixture(), files = createProjectFiles(spec);
     expect(JSON.parse(files['config.json'])).toEqual(spec);
-    expect(JSON.parse(files['source/config.json'])).toEqual(spec);
-    expect(files['source/src/ui/Preview.tsx']).toContain('export function Preview');
-    expect(files['source/src/ui/preview.css']).toContain('.layout-bakery');
-    expect(files['source/src/templates/presentation.ts']).toContain('getTemplatePresentation');
-    expect(JSON.parse(files['source/package.json']).scripts).toHaveProperty('build');
+    expect(JSON.parse(files['configuration.json'])).toEqual(spec);
+    expect(files['index.html']).toContain('template-preview layout-bakery');
+    expect(files['styles.css']).toContain('.layout-bakery');
+    expect(files['app.js']).toContain('No form data is sent');
+    expect(Object.keys(files).some(path => /package\.json|vite|\.tsx?$|^source\//.test(path))).toBe(false);
     expect(files['README.md']).toMatch(/fresh|new.*session/i);
     expect(files['ROADMAP.md']).toMatch(/backend/i);
-    expect(files['index.html']).not.toMatch(/<script[^>]+src=|<link[^>]+href=/);
+    expect(files['standalone.html']).not.toMatch(/<script[^>]+src=|<link[^>]+href=/);
   });
 
   it('extracts every ZIP member with its exact original UTF-8 content and valid CRC', async () => {

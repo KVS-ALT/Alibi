@@ -19,7 +19,16 @@ describe('anonymous builder API',()=>{
   const stream=await client.request(`/api/sessions/${id}/jobs/${jobId}/events`,{headers:{cookie}});expect(stream.headers.get('content-type')).toBe('text/event-stream');const events=(await stream.text()).split('\n').filter(line=>line.startsWith('data: ')).map(line=>JSON.parse(line.slice(6)));
   const completed=events.filter(e=>e.type==='stage'&&e.progress.status==='completed').map(e=>e.progress.stage);
   expect(completed[0]).toBe('template');expect(completed.slice(1,4).sort()).toEqual(['assets','content','style']);expect(completed.slice(4)).toEqual(['validate','export']);
-  const result=events.find(e=>e.type==='result').result;expect(result.uiSpec.templateId).toBe('restaurant');expect(result.uiSpec.screens[0].title).toContain('Juniper');
+  const result=events.find(e=>e.type==='result').result;expect(result.uiSpec.templateId).toBe('restaurant');
+  const home=result.uiSpec.screens.find((screen:{id:string})=>screen.id==='home');
+  expect(home.components.find((component:{id:string})=>component.id==='hero-brand')).toMatchObject({type:'text',properties:{text:'Juniper'}});
+  expect(home.title).toBe('A sample seasonal menu');
+  expect(home.components.find((component:{id:string})=>component.id==='results')).toMatchObject({type:'table',properties:{columns:['dish','category','diet','price'],dataKey:'listings'}});
+  expect(result.uiSpec.demoData.listings.length).toBeGreaterThan(0);
+  expect(result.uiSpec.demoData.listings.every((row:Record<string,unknown>)=>['dish','category','diet','price'].every(key=>Object.hasOwn(row,key)))).toBe(true);
+  const booking=result.uiSpec.screens.find((screen:{id:string})=>screen.id==='contact');
+  expect(booking.title).toBe('Plan a table reservation');
+  expect(booking.components.find((component:{id:string})=>component.id==='contact-form')).toMatchObject({type:'form',properties:{submitLabel:'Save demo reservation'}});
   const config=await client.request(`/api/sessions/${id}/export?format=json`,{headers:{cookie}});expect(await config.json()).toEqual(result.uiSpec);
   const archive=await client.request(`/api/sessions/${id}/export?format=source`,{headers:{cookie}});expect(archive.headers.get('content-type')).toBe('application/zip');expect(new Uint8Array(await archive.arrayBuffer()).slice(0,4)).toEqual(new Uint8Array([80,75,3,4]));
   const handoff=await client.request(`/api/sessions/${id}/email`,post({recipient:'person@example.com',enabled:true,projectVersion:result.uiSpec.version},cookie));expect(await handoff.json()).toEqual({status:'ready',notSent:true,reason:'email_disabled',publicLinkAvailable:false,artifactAccess:'owner-cookie-required'});

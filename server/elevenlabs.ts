@@ -26,9 +26,9 @@ interface Session { state: 'active' | 'muted' | 'ended'; seen: Set<string>; pend
 const fail = (code: string, retryable = false): SpeechTranscriptionResult => ({
   ok: false, code, retryable,
   safeMessage: code === 'provider_disabled'
-    ? 'ElevenLabs transcription is disabled. Continue by typing.'
-    : code === 'cancelled' ? 'Transcription cancelled. Continue by typing.'
-      : 'Audio transcription is unavailable. Continue by typing or explicitly resume to try again.',
+    ? 'ElevenLabs transcription is disabled for this session.'
+    : code === 'cancelled' ? 'Transcription cancelled.'
+      : 'Audio transcription is unavailable. Try starting again or end the session.',
 });
 const cap = (value: number | undefined, fallback: number) => Number.isSafeInteger(value) && value! > 0 ? Math.min(value!, fallback) : fallback;
 function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {

@@ -86,7 +86,7 @@ describe('server bounded ElevenLabs transcription', () => {
     const controller = new AbortController(); controller.abort();
     expect(await provider.transcribe({ ...chunk, signal: controller.signal })).toMatchObject({ ok: false, code: 'cancelled' });
     expect(fetcher).not.toHaveBeenCalled();
-    expect(await provider.transcribe({ ...chunk, chunkId: 'c2' })).toMatchObject({ ok: false, code: 'invalid_provider_response', safeMessage: expect.stringMatching(/typ/i) });
+    expect(await provider.transcribe({ ...chunk, chunkId: 'c2' })).toMatchObject({ ok: false, code: 'invalid_provider_response', safeMessage: expect.stringMatching(/try/i) });
   });
   it('rejects missing container headers and requires separate acceptance before provider logging', async () => {
     const fetcher = vi.fn(async () => response());

@@ -30,7 +30,7 @@ describe('bounded browser recording adapter', () => {
     await capture.resume(); expect(transport.start).not.toHaveBeenCalled();
     await capture.start();
     expect(getUserMedia).not.toHaveBeenCalled();
-    expect(capture.getSnapshot()).toMatchObject({ status: 'muted', error: expect.stringMatching(/typ/i) });
+    expect(capture.getSnapshot()).toMatchObject({ status: 'muted', error: expect.stringMatching(/try/i) });
   });
   it('flushes the active self-contained recording before returning and starts a fresh recorder', async () => {
     vi.useFakeTimers();
@@ -82,7 +82,7 @@ describe('bounded browser recording adapter', () => {
     const pending = capture.flush();
     await vi.advanceTimersByTimeAsync(1100);
     await pending;
-    expect(capture.getSnapshot()).toMatchObject({ status: 'muted', error: expect.stringMatching(/typ/i) });
+    expect(capture.getSnapshot()).toMatchObject({ status: 'muted', error: expect.stringMatching(/try/i) });
     expect(track.stop).toHaveBeenCalledTimes(1);
   }, 1000);
   it('bounds stalled authorization without opening the microphone', async () => {

@@ -15,6 +15,8 @@ export interface ProviderCaptureOptions {
   onSegment: (segment: TranscriptSegment) => void;
   onBuild: () => void;
   transport?: ProviderSpeechTransport;
+  buildPhrase?: string;
+  pausePhrase?: string;
 }
 export interface RecorderLike {
   state: string;
@@ -31,7 +33,7 @@ export interface ProviderCaptureDependencies {
   normalizeAudio?: (blob: Blob) => Promise<{ audio: Blob; durationMs: number }>;
   now?: () => number;
 }
-const fallbackMessage = 'Audio transcription is unavailable. Continue by typing or explicitly resume to try again.';
+const fallbackMessage = 'Audio transcription is unavailable. Try starting again or end the session.';
 function bounded<T>(operation: Promise<T>, signal: AbortSignal, milliseconds: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const stop = () => { clearTimeout(timer); signal.removeEventListener('abort', stop); reject(new Error(fallbackMessage)); };
@@ -176,8 +178,8 @@ export function createProviderCapture(options: ProviderCaptureOptions, dependenc
           if (!valid(version)) return;
           if (!response.ok || !response.segment || response.segment.sessionId !== options.sessionId) throw new Error('Transcription unavailable');
           const command = response.segment.text.trim().toLowerCase().replace(/[.!?]+$/u, '').trim();
-          if (command === 'pause listening') mute();
-          else if (command === 'build prototype') buildRequested = true;
+          if (options.pausePhrase !== '' && command === (options.pausePhrase ?? 'pause listening')) mute();
+          else if (options.buildPhrase !== '' && command === (options.buildPhrase ?? 'build prototype')) buildRequested = true;
           else if (response.segment.text.trim()) options.onSegment(response.segment);
         } catch { if (valid(version)) failure(); }
       })();
@@ -229,11 +231,11 @@ export function useProviderCapture(options: ProviderCaptureOptions) {
   const [snapshot, setSnapshot] = useState<CaptureSnapshot>({ status: 'idle', supported: true, starting: false, interimText: '' });
   useEffect(() => { callbacks.current = options; });
   useEffect(() => {
-    const capture = createProviderCapture({ sessionId: options.sessionId, transport: options.transport, onSegment: segment => callbacks.current.onSegment(segment), onBuild: () => callbacks.current.onBuild() });
+    const capture = createProviderCapture({ sessionId: options.sessionId, transport: options.transport, buildPhrase: options.buildPhrase, pausePhrase: options.pausePhrase, onSegment: segment => callbacks.current.onSegment(segment), onBuild: () => callbacks.current.onBuild() });
     controller.current = capture;
     const unsubscribe = capture.subscribe(() => setSnapshot(capture.getSnapshot())); setSnapshot(capture.getSnapshot());
     return () => { unsubscribe(); capture.dispose(); if (controller.current === capture) controller.current = null; };
-  }, [options.sessionId, options.transport]);
+  }, [options.sessionId, options.transport, options.buildPhrase, options.pausePhrase]);
   const actions = useMemo(() => ({ start: () => controller.current?.start(), resume: () => controller.current?.resume(), mute: () => controller.current?.mute(), end: () => controller.current?.end(), flush: async () => { await controller.current?.flush(); } }), []);
   return { ...snapshot, ...actions };
 }

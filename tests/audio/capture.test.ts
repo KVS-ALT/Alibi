@@ -88,7 +88,7 @@ describe('consented browser capture lifecycle', () => {
     const { capture, factory } = setup(false);
     capture.start();
     expect(capture.getSnapshot()).toMatchObject({ status: 'muted', supported: false });
-    expect(capture.getSnapshot().error).toMatch(/typ/i);
+    expect(capture.getSnapshot().error).toMatch(/speech|browser/i);
     expect(factory).not.toHaveBeenCalled();
   });
   it('cleans up on dispose and cannot be restarted', () => {

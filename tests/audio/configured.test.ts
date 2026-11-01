@@ -40,4 +40,21 @@ describe('configured capture selection', () => {
     await act(async () => { const pending = result.current.start(); await vi.advanceTimersByTimeAsync(5000); await pending; });
     expect(factory).not.toHaveBeenCalled(); expect(result.current.error).toEqual(expect.any(String)); unmount();
   }, 1000);
+  it('requires a new explicit Start after End and recreates capture without changing the project session', async () => {
+    const instances: any[] = [];
+    (window as any).SpeechRecognition = class {
+      continuous = false; interimResults = false; lang = ''; onstart: any = null; onend: any = null; onerror: any = null; onresult: any = null;
+      start = vi.fn(); abort = vi.fn(); constructor() { instances.push(this); }
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ providers: { speech: { provider: 'browser', configured: true, enabled: true } } }))));
+    const props = options(); const { result, unmount } = renderHook(() => useConfiguredSpeechCapture(props));
+    await act(async () => { await result.current.start(); });
+    act(() => result.current.end()); expect(instances[0].abort).toHaveBeenCalledTimes(1);
+    await act(async () => { await result.current.resume(); }); expect(instances).toHaveLength(1);
+    let restart!: Promise<void>; act(() => { restart = result.current.start(); });
+    await act(async () => { await restart; }); expect(instances).toHaveLength(2);
+    act(() => instances[1].onresult({ resultIndex: 0, results: [{ 0: { transcript: 'Keep the same prototype' }, isFinal: true }] }));
+    expect(props.onSegment).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', text: 'Keep the same prototype' }));
+    unmount();
+  });
 });

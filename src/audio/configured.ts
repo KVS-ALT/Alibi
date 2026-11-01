@@ -12,9 +12,11 @@ const noop = () => {};
 
 /** Provider selection is server metadata, never inferred from missing client credentials. */
 export function useConfiguredSpeechCapture(options: ConfiguredSpeechOptions) {
-  const browser = useSpeechCapture({ ...options, onBuild: noop, buildPhrase: '', pausePhrase: '' });
-  const elevenlabs = useProviderCapture({ ...options, onBuild: noop, buildPhrase: '', pausePhrase: '' });
-  const speechmatics = useSpeechmaticsCapture(options);
+  const [lifecycleKey, setLifecycleKey] = useState(0);
+  const restarted = useRef<(() => void) | null>(null);
+  const browser = useSpeechCapture({ ...options, lifecycleKey, onBuild: noop, buildPhrase: '', pausePhrase: '' });
+  const elevenlabs = useProviderCapture({ ...options, lifecycleKey, onBuild: noop, buildPhrase: '', pausePhrase: '' });
+  const speechmatics = useSpeechmaticsCapture({ ...options, lifecycleKey });
   const controls = useRef({ browser, elevenlabs, speechmatics }); controls.current = { browser, elevenlabs, speechmatics };
   const [metadata, setMetadata] = useState<Metadata | null>(null);
   const [metadataLoading, setMetadataLoading] = useState(true);
@@ -56,11 +58,18 @@ export function useConfiguredSpeechCapture(options: ConfiguredSpeechOptions) {
   useEffect(() => {
     mounted.current = true; ended.current = false; selectedProvider.current = null; metadataPromise.current = null;
     setMetadata(null); setLocallyMuted(false); setSelectionError(undefined); void readMetadata();
-    return () => { mounted.current = false; operation.current++; metadataAbort.current?.abort(); metadataPromise.current = null; };
+    return () => { mounted.current = false; operation.current++; metadataAbort.current?.abort(); metadataPromise.current = null; restarted.current?.(); restarted.current = null; };
   }, [options.sessionId]);
+  useEffect(() => { restarted.current?.(); restarted.current = null; }, [lifecycleKey]);
   const actions = useMemo(() => {
     const begin = async (resuming: boolean) => {
-      if (ended.current || !mounted.current) return;
+      if (!mounted.current) return;
+      if (ended.current) {
+        if (resuming) return;
+        ended.current = false; selectedProvider.current = null; metadataPromise.current = null;
+        await new Promise<void>(resolve => { restarted.current = resolve; setLifecycleKey(value => value + 1); });
+        if (!mounted.current) return;
+      }
       const version = ++operation.current; setSelecting(true);
       try {
         const speech = await readMetadata();

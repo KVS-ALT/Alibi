@@ -31,7 +31,7 @@ export function useSpeechCapture(options: SpeechCaptureOptions) {
       capture.dispose();
       if (controller.current === capture) controller.current = null;
     };
-  }, [sessionId, lang, buildPhrase, pausePhrase, createRecognition, explicitFactory]);
+  }, [sessionId, lang, buildPhrase, pausePhrase, createRecognition, explicitFactory, options.lifecycleKey]);
   const actions = useMemo(() => ({
     start: () => controller.current?.start(),
     resume: () => controller.current?.resume(),

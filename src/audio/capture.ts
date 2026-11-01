@@ -30,6 +30,7 @@ export interface CaptureSnapshot {
 }
 export interface SpeechCaptureOptions {
   sessionId: string;
+  lifecycleKey?: number;
   onSegment: (segment: TranscriptSegment) => void;
   onBuild: () => void;
   createRecognition?: RecognitionFactory;
@@ -93,13 +94,13 @@ export function createSpeechCapture(options: SpeechCaptureOptions) {
   function open() {
     if (!wantsAudio || disposed || recognition) return;
     if (!factory) {
-      fail('Speech recognition is unavailable in this browser. Continue by typing.');
+      fail('Speech recognition is unavailable in this browser. Try another supported browser.');
       return;
     }
     update({ starting: true, error: undefined });
     let current: RecognitionLike;
     try { current = factory(); } catch {
-      fail('Speech recognition could not start. Continue by typing or try again.');
+      fail('Speech recognition could not start. Try starting again or end the session.');
       return;
     }
     recognition = current;
@@ -139,8 +140,8 @@ export function createSpeechCapture(options: SpeechCaptureOptions) {
       if (event.error === 'no-speech') return;
       const denied = event.error === 'not-allowed' || event.error === 'service-not-allowed';
       fail(denied
-        ? 'Microphone permission was denied. Continue by typing, or allow access and resume.'
-        : 'Speech recognition stopped. Continue by typing or resume to try again.');
+        ? 'Microphone permission was denied. Allow access, then try starting again.'
+        : 'Speech recognition stopped. Try starting again or end the session.');
     };
     current.onend = () => {
       if (!valid()) return;
@@ -150,7 +151,7 @@ export function createSpeechCapture(options: SpeechCaptureOptions) {
       restart = setTimeout(() => { restart = undefined; open(); }, 250);
     };
     try { current.start(); } catch {
-      if (valid()) fail('Microphone access could not start. Continue by typing or resume to try again.');
+      if (valid()) fail('Microphone access could not start. Check microphone access, then try starting again.');
     }
   }
   function start() {

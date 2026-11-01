@@ -12,6 +12,7 @@ export interface ProviderSpeechTransport {
 }
 export interface ProviderCaptureOptions {
   sessionId: string;
+  lifecycleKey?: number;
   onSegment: (segment: TranscriptSegment) => void;
   onBuild: () => void;
   transport?: ProviderSpeechTransport;
@@ -235,7 +236,7 @@ export function useProviderCapture(options: ProviderCaptureOptions) {
     controller.current = capture;
     const unsubscribe = capture.subscribe(() => setSnapshot(capture.getSnapshot())); setSnapshot(capture.getSnapshot());
     return () => { unsubscribe(); capture.dispose(); if (controller.current === capture) controller.current = null; };
-  }, [options.sessionId, options.transport, options.buildPhrase, options.pausePhrase]);
+  }, [options.sessionId, options.transport, options.buildPhrase, options.pausePhrase, options.lifecycleKey]);
   const actions = useMemo(() => ({ start: () => controller.current?.start(), resume: () => controller.current?.resume(), mute: () => controller.current?.mute(), end: () => controller.current?.end(), flush: async () => { await controller.current?.flush(); } }), []);
   return { ...snapshot, ...actions };
 }

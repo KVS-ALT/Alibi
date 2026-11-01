@@ -18,6 +18,7 @@ export type SpeechmaticsTokenTransport = ((sessionId: string, signal: AbortSigna
 };
 export interface SpeechmaticsCaptureOptions {
   sessionId: string; onSegment(segment: TranscriptSegment): void; onBuild?(): void;
+  lifecycleKey?: number;
   tokenTransport?: SpeechmaticsTokenTransport;
 }
 export interface SpeechmaticsCaptureDependencies {
@@ -236,7 +237,7 @@ export function useSpeechmaticsCapture(options: SpeechmaticsCaptureOptions) {
     const capture = createSpeechmaticsCapture({ sessionId: options.sessionId, tokenTransport: options.tokenTransport, onSegment: segment => callbacks.current.onSegment(segment) });
     controller.current = capture; const unsubscribe = capture.subscribe(() => setSnapshot(capture.getSnapshot())); setSnapshot(capture.getSnapshot());
     return () => { unsubscribe(); capture.dispose(); if (controller.current === capture) controller.current = null; };
-  }, [options.sessionId, options.tokenTransport]);
+  }, [options.sessionId, options.tokenTransport, options.lifecycleKey]);
   const actions = useMemo(() => ({ start: () => controller.current?.start(), resume: () => controller.current?.resume(), mute: () => controller.current?.mute(), end: () => controller.current?.end(), flush: async () => { await controller.current?.flush(); } }), []);
   return { ...snapshot, ...actions };
 }

@@ -56,4 +56,4 @@ Open the app in Chrome, click the mic and start talking. For example: *"I'm John
 
 Next.js · TypeScript · Tailwind · Speechmatics · Featherless · zod
 
-Made by [Keith Singh](https://github.com/KVS-ALT) and [GreenKeewi](https://github.com/GreenKeewi).
+Made by [Keith Singh](https://github.com/KVS-ALT), [GreenKeewi](https://github.com/GreenKeewi), and Claude Code.

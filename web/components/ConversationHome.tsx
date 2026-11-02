@@ -268,7 +268,7 @@ export default function ConversationHome() {
         <div className="max-w-sm">
          <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-neutral-100 text-neutral-500"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1M12 18v4M8 22h8"/></svg></div>
          <h1 className="text-lg font-semibold">Your portfolio builds here, live</h1>
-         <p className="mt-2 text-sm leading-relaxed text-neutral-500">Start talking. Try: <span className="text-neutral-700">“I&apos;m Priya, I study CS at Waterloo. Last term I built a web app called LeaseLens…”</span></p>
+         <p className="mt-2 text-sm leading-relaxed text-neutral-500">Start talking. Try: <span className="text-neutral-700">“I&apos;m John, I&apos;m a CS student. Last term I built a web app called LeaseLens…”</span></p>
         </div>
        </div>
       )}

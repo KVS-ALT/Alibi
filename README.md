@@ -29,7 +29,7 @@ npm run build:web
 npm run start:web
 ```
 
-Open http://localhost:3000 in Chrome, click the mic and start talking. Something like: "I'm Priya, I study CS at Waterloo. Last term I built a web app called LeaseLens that flags sketchy clauses in lease PDFs…"
+Open http://localhost:3000 in Chrome, click the mic and start talking. Something like: "I'm John, I'm a CS student. Last term I built a web app called LeaseLens that flags sketchy clauses in lease PDFs…"
 
 `/p/demo-backup` has a finished example portfolio, and `/preview` shows all the templates.
 

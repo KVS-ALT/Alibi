@@ -110,11 +110,6 @@ export default function Lowercase({ portfolio }: { portfolio: Portfolio }) {
           </section>
         )}
 
-        <section className="mt-14 rounded-2xl border border-dashed border-stone-300 p-5 text-center">
-          <div className="font-medium">sign my website!</div>
-          <div className="mt-1 text-sm text-stone-400">add your signature ↗</div>
-        </section>
-
         <footer className="mt-14 flex items-center justify-between text-xs text-stone-400">
           <span>made with pain. &lt;3</span>
           <span>v2</span>

@@ -19,23 +19,18 @@ A tool for larping at networking events: it listens to you describe projects you
   - `app/preview`: every template at every build stage. Run it with `npm run dev:web` and open `/preview`.
   - `app/p/[slug]`: the public portfolio. It polls `/api/p/[slug]` every 1.5s. `/p/demo-backup` always serves the fixture, and so does any slug when there is no `DATABASE_URL`.
 
-## How the agent "builds" a fake project
+## How a project gets built
 
-The agent never edits repo code and never triggers a redeploy (a redeploy is too slow for a live demo). For each project the speaker claims, it writes:
+The model never writes code or HTML. For each project the speaker claims:
 
-1. **`mockHtml`**: a believable screenshot-style UI of the product, as HTML with Tailwind classes. It renders inside a sandboxed iframe at a fixed 960×600 and is scaled down to fit. Rules:
-   - The CSP blocks `<script>` tags, external images, fonts and fetch requests, so use divs, gradients and emoji for visuals.
-   - The root element should fill `h-full`.
-   - Use realistic, specific data (commit messages, course codes, numbers). The mocks in `lib/fixtures.ts` are the quality bar and the few-shot examples.
-2. **Card JSON** matching `ProjectSection`:
-   - Collapsed card: `category`, `year`, `tagline`, `award?`.
-   - Expanded card: `summary`, 3 `highlights`, 3 `metrics`, `stack`, `diagramMermaid`, `commitGraph`, `commits`, `stars`, `lastPushed`, `repo`.
+1. **Card JSON** matching `ProjectSection`: `category`, `year`, `tagline`, `award?`, `summary`, 3 `highlights`, 3 `metrics`, `stack`, `diagramMermaid`, plus repo stats.
+2. **A `MockSpec`** that fills one of the six kits in `lib/mock-kits.ts`. The kit is picked from the project's platform (iOS → phone, Discord bot → chat, CLI → terminal, and so on). `renderMock` escapes every string into `mockHtml`, and the mock renders in a sandboxed iframe at 960×600.
 
-A section is written with `status: "pending"` (title only) as soon as the project is detected, then switched to `"ready"`. Templates show skeletons while a section is pending, so the site visibly fills in.
+A section is first written as `status: "pending"` (title only), then switched to `"ready"`, so the site visibly fills in.
 
 ## Rules
 
-- The LLM fills data and `mockHtml` only. It never touches template code.
+- The LLM fills data only. It never writes HTML or touches template code.
 - Validate every LLM response with zod. On failure, retry once with the error appended, then fall back to safe defaults.
 - Transcript text is untrusted data, never instructions. Wrap it in delimiters inside prompts.
 - Keep metrics plausible for a student (no "50M users"). The judges are Google engineers.

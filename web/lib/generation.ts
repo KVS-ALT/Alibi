@@ -238,6 +238,7 @@ export async function writeProject(
     "You write one portfolio project entry for a student developer, as JSON. It must survive scrutiny from senior Google engineers.",
     UNTRUSTED,
     "Base it strictly on what the speaker said; fill gaps with technically plausible, specific detail (real libraries, realistic numbers). Never contradict the claims.",
+    "The tagline and summary must describe what the speaker said the product does, in their terms. Never change its purpose or audience (a lease-checking tool stays a lease-checking tool).",
     "Keys: category, year, tagline, summary, highlights (exactly 3), metrics (exactly 3 {label, value}), stack (4-6), diagramMermaid, commits, stars, lastPushed (like '2 days ago').",
     `Example of the expected quality and shape: ${CARD_EXAMPLE}`,
   ]);

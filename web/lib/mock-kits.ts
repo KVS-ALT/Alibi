@@ -6,7 +6,6 @@ import { z } from "zod";
 
 export const KITS = ["dashboard", "cards", "phone", "terminal", "chat", "extension"] as const;
 export const ACCENTS = ["emerald", "indigo", "sky", "violet", "orange", "rose", "amber", "teal"] as const;
-type Accent = (typeof ACCENTS)[number];
 type Status = "good" | "warn" | "bad" | "neutral";
 
 const s = (max: number, fallback = "") => z.coerce.string().trim().transform((v) => v.slice(0, max)).catch(fallback);

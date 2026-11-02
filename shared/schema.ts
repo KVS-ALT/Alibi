@@ -39,14 +39,14 @@ export const ProjectSection = z.object({
   commits: z.number().optional(),
   lastPushed: z.string().optional(), // "2 days ago"
   stars: z.number().optional(),
-  repo: z.string().optional(), // "jmiller/shipit" (shown as text, never linked)
+  repo: z.string().optional(), // "keithk/shipit" (shown as text, never linked)
 });
 export type ProjectSection = z.infer<typeof ProjectSection>;
 
 export const Hero = z.object({
   name: z.string(),
-  handle: z.string(), // "jmiller"
-  roles: z.array(z.string()), // ["cs student", "builder"]
+  handle: z.string(), // "keithk"
+  roles: z.array(z.string()), // ["cs @ uwaterloo", "builder"]
   bio: z.string(),
   currently: z.array(z.string()), // "building shipit v2", "looking for summer 2027 internships"
   location: z.string().optional(),

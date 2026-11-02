@@ -17,7 +17,7 @@ const SHIPIT_MOCK = `
   </aside>
   <main class="flex-1 p-8">
     <div class="mb-6 flex items-end justify-between">
-      <div><div class="text-sm text-neutral-500">robotics-club / website</div><h1 class="text-2xl font-semibold text-white">Deployments</h1></div>
+      <div><div class="text-sm text-neutral-500">uw-robotics / website</div><h1 class="text-2xl font-semibold text-white">Deployments</h1></div>
       <div class="rounded-md bg-white px-4 py-2 text-sm font-medium text-black">Redeploy</div>
     </div>
     <div class="mb-6 grid grid-cols-3 gap-4">
@@ -45,9 +45,9 @@ const STUDYMATCH_MOCK = `
     <div class="mb-1 text-sm text-stone-500">Fall 2026 · 5 courses</div>
     <h1 class="mb-6 text-3xl font-bold">Your matches this week</h1>
     <div class="grid grid-cols-3 gap-5">
-      <div class="rounded-2xl bg-white p-5 shadow-sm"><div class="mb-3 flex items-center justify-between"><span class="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">CS 341</span><span class="text-sm font-semibold text-emerald-600">94% match</span></div><div class="mb-1 text-lg font-semibold">Algorithms grind</div><div class="mb-4 text-sm text-stone-500">Tue + Thu · main library · 7pm</div><div class="flex -space-x-2"><div class="h-8 w-8 rounded-full border-2 border-white bg-rose-300"></div><div class="h-8 w-8 rounded-full border-2 border-white bg-amber-300"></div><div class="h-8 w-8 rounded-full border-2 border-white bg-sky-300"></div><div class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-stone-100 text-xs">+2</div></div><div class="mt-5 rounded-lg bg-indigo-600 py-2 text-center text-sm font-medium text-white">Join group</div></div>
+      <div class="rounded-2xl bg-white p-5 shadow-sm"><div class="mb-3 flex items-center justify-between"><span class="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">CS 341</span><span class="text-sm font-semibold text-emerald-600">94% match</span></div><div class="mb-1 text-lg font-semibold">Algorithms grind</div><div class="mb-4 text-sm text-stone-500">Tue + Thu · DC library · 7pm</div><div class="flex -space-x-2"><div class="h-8 w-8 rounded-full border-2 border-white bg-rose-300"></div><div class="h-8 w-8 rounded-full border-2 border-white bg-amber-300"></div><div class="h-8 w-8 rounded-full border-2 border-white bg-sky-300"></div><div class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-stone-100 text-xs">+2</div></div><div class="mt-5 rounded-lg bg-indigo-600 py-2 text-center text-sm font-medium text-white">Join group</div></div>
       <div class="rounded-2xl bg-white p-5 shadow-sm"><div class="mb-3 flex items-center justify-between"><span class="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">MATH 239</span><span class="text-sm font-semibold text-emerald-600">88% match</span></div><div class="mb-1 text-lg font-semibold">Graph theory pset crew</div><div class="mb-4 text-sm text-stone-500">Sun · Discord · 3pm</div><div class="flex -space-x-2"><div class="h-8 w-8 rounded-full border-2 border-white bg-lime-300"></div><div class="h-8 w-8 rounded-full border-2 border-white bg-violet-300"></div><div class="h-8 w-8 rounded-full border-2 border-white bg-orange-300"></div></div><div class="mt-5 rounded-lg bg-indigo-600 py-2 text-center text-sm font-medium text-white">Join group</div></div>
-      <div class="rounded-2xl bg-white p-5 shadow-sm"><div class="mb-3 flex items-center justify-between"><span class="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700">STAT 230</span><span class="text-sm font-semibold text-amber-600">71% match</span></div><div class="mb-1 text-lg font-semibold">Midterm review</div><div class="mb-4 text-sm text-stone-500">Wed · Room 2034 · 6pm</div><div class="flex -space-x-2"><div class="h-8 w-8 rounded-full border-2 border-white bg-teal-300"></div><div class="h-8 w-8 rounded-full border-2 border-white bg-pink-300"></div></div><div class="mt-5 rounded-lg border border-stone-200 py-2 text-center text-sm font-medium">Request invite</div></div>
+      <div class="rounded-2xl bg-white p-5 shadow-sm"><div class="mb-3 flex items-center justify-between"><span class="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700">STAT 230</span><span class="text-sm font-semibold text-amber-600">71% match</span></div><div class="mb-1 text-lg font-semibold">Midterm review</div><div class="mb-4 text-sm text-stone-500">Wed · MC 2034 · 6pm</div><div class="flex -space-x-2"><div class="h-8 w-8 rounded-full border-2 border-white bg-teal-300"></div><div class="h-8 w-8 rounded-full border-2 border-white bg-pink-300"></div></div><div class="mt-5 rounded-lg border border-stone-200 py-2 text-center text-sm font-medium">Request invite</div></div>
     </div>
     <div class="mt-6 flex items-center gap-3 rounded-xl bg-white p-4 text-sm shadow-sm"><span class="text-lg">⚡</span><span>Matching runs every Sunday at 9pm based on your calendar and course load.</span><span class="ml-auto text-indigo-600">Edit availability →</span></div>
   </main>
@@ -81,14 +81,14 @@ export const SAMPLE_PORTFOLIO: Portfolio = {
   hero: {
     name: "Sam Rivera",
     handle: "samrivera",
-    roles: ["cs student", "builder", "occasional designer"],
+    roles: ["cs @ uwaterloo", "builder", "occasional designer"],
     bio: "I build small tools that people actually keep using: a deploy CLI six student clubs run on, a study-group matcher that made it through a whole semester, and an iOS app that tells you what to cook from a photo of your fridge.",
     currently: [
       "shipping shipit v2 with monorepo support",
       "ta for cs 136",
       "looking for summer 2027 swe internships",
     ],
-    location: "Toronto, ON",
+    location: "Waterloo, ON",
   },
   skills: ["TypeScript", "Go", "Python", "React", "Postgres", "Docker", "PyTorch", "Swift"],
   projects: {

@@ -6,6 +6,7 @@ import { z } from "zod";
 
 export const KITS = ["dashboard", "cards", "phone", "terminal", "chat", "extension"] as const;
 export const ACCENTS = ["emerald", "indigo", "sky", "violet", "orange", "rose", "amber", "teal"] as const;
+type Accent = (typeof ACCENTS)[number];
 type Status = "good" | "warn" | "bad" | "neutral";
 
 const s = (max: number, fallback = "") => z.coerce.string().trim().transform((v) => v.slice(0, max)).catch(fallback);
@@ -62,8 +63,7 @@ function normalize(spec: MockSpec) {
     action: bare(spec.action) || "New",
     user: spec.user || "you",
     stats: pad(spec.stats, 3, (i) => ({ label: ["Today", "This week", "Total"][i], value: ["12", "84", "1.2k"][i], note: "" })),
-    // Rows are never padded: a fake "Item 4" row looks worse than one fewer row.
-    items: spec.items,
+    items: pad(spec.items, 4, (i) => ({ title: `Item ${i + 1}`, subtitle: "", meta: `${i + 2}m ago`, tag: "", status: "neutral" as Status })),
   };
 }
 type Spec = ReturnType<typeof normalize>;
@@ -210,7 +210,7 @@ export function renderMock(spec: MockSpec): string {
 // Reference specs: shown on /preview/kits and used as the example in the agent prompt.
 export const KIT_SAMPLES: Record<MockSpec["kit"], MockSpec> = {
   dashboard: {
-    kit: "dashboard", theme: "dark", accent: "emerald", appName: "shipit", context: "robotics-club / website", heading: "Deployments", action: "Redeploy", user: "sam",
+    kit: "dashboard", theme: "dark", accent: "emerald", appName: "shipit", context: "uw-robotics / website", heading: "Deployments", action: "Redeploy", user: "sam",
     nav: ["Deployments", "Projects", "Previews", "Cache", "Settings"],
     stats: [{ label: "Median build", value: "41s", note: "−54% vs no cache" }, { label: "Cache hit rate", value: "87%", note: "last 7 days" }, { label: "Deploys this week", value: "23", note: "6 previews open" }],
     items: [
@@ -226,9 +226,9 @@ export const KIT_SAMPLES: Record<MockSpec["kit"], MockSpec> = {
     nav: ["My groups", "Browse", "Schedule"],
     stats: [{ label: "groups formed", value: "58", note: "" }, { label: "signups", value: "312", note: "" }, { label: "weekly active", value: "140", note: "" }],
     items: [
-      { title: "Algorithms grind", subtitle: "Tue + Thu · main library · 7pm", meta: "94% match", tag: "CS 341", status: "good" },
+      { title: "Algorithms grind", subtitle: "Tue + Thu · DC library · 7pm", meta: "94% match", tag: "CS 341", status: "good" },
       { title: "Graph theory pset crew", subtitle: "Sun · Discord · 3pm", meta: "88% match", tag: "MATH 239", status: "good" },
-      { title: "Midterm review", subtitle: "Wed · Room 2034 · 6pm", meta: "71% match", tag: "STAT 230", status: "warn" },
+      { title: "Midterm review", subtitle: "Wed · MC 2034 · 6pm", meta: "71% match", tag: "STAT 230", status: "warn" },
     ],
     callout: "Matching runs every Sunday at 9pm based on your calendar and course load.",
   },
@@ -257,7 +257,7 @@ export const KIT_SAMPLES: Record<MockSpec["kit"], MockSpec> = {
     callout: "run `dotsync resolve .gitconfig` to pick a side",
   },
   chat: {
-    kit: "chat", theme: "dark", accent: "violet", appName: "Standup", context: "Robotics Club", heading: "Daily standup · Tue Nov 4", action: "standup", user: "maya",
+    kit: "chat", theme: "dark", accent: "violet", appName: "Standup", context: "UW Robotics", heading: "Daily standup · Tue Nov 4", action: "standup", user: "maya",
     nav: ["standups", "general", "mechanical", "software"],
     stats: [{ label: "Submitted", value: "21 / 24", note: "" }, { label: "Blockers", value: "3", note: "" }, { label: "Streak", value: "38 days", note: "" }],
     items: [

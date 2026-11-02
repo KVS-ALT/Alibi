@@ -43,7 +43,7 @@ export function providerMetadata(){const runtime=getLiveRuntime();return {
  speech:{provider:'speechmatics',transport:'proxy',configured:!!runtime.speechKey,enabled:runtime.speechEnabled},
 };}
 export function storageMode(){return hasDb()?'postgres':'memory';}
-export function sessionPayload(session:LiveSession){return {id:session.id,slug:session.slug,url:'/p/'+session.slug,status:session.status,portfolio:session.portfolio,version:session.version,error:session.error,active:session.active,transcript:conversation(session),builder:session.builder,metrics:session.metrics,contradictions:session.portfolio.contradictions,storage:storageMode(),providers:providerMetadata()};}
+export function sessionPayload(session:LiveSession){return {id:session.id,slug:session.slug,url:'/p/'+session.slug,status:session.status,portfolio:session.portfolio,version:session.version,error:session.error,active:session.active,transcript:conversation(session),metrics:session.metrics,contradictions:session.portfolio.contradictions,storage:storageMode(),providers:providerMetadata()};}
 async function save(session:LiveSession){
  if(!hasDb())return;
  await db().query('insert into sessions (id,slug,transcript,claims,portfolio,metrics) values ($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb) on conflict(id) do update set transcript=excluded.transcript,claims=excluded.claims,portfolio=excluded.portfolio,metrics=excluded.metrics',
@@ -107,9 +107,6 @@ async function publish(session:LiveSession,portfolio:PortfolioData){
 /** build_portfolio: extract claims, then write each new/changed project in parallel, publishing each section as it lands. */
 async function build(session:LiveSession){
  if(session.building||session.revision<=session.acceptedRevision||!providerMetadata().generation.enabled)return;
- // In a multi-voice conversation, wait until someone actually claims to have built something;
- // otherwise the first speaker (often the one asking) ends up as the portfolio's owner.
- {const t=conversation(session);if(/\[S\d{1,3}\]/.test(t)&&!builderSpeaker(t))return;}
  if(session.builds>=MAX_BUILDS_PER_SESSION()){session.error='Build limit for this session reached. Your last portfolio is preserved.';return;}
  session.builds++;session.firstDirtyAt=undefined;
  // While the mic is live, the last sentence may be half-spoken ("an app called lease"); build from complete ones.
@@ -125,36 +122,25 @@ async function build(session:LiveSession){
   const extracted=(await timed(session,'extract_claims',()=>extractClaims(transcript,session.claims,signal,builder))).value;
   const claims=Claims.parse({
    ...(extracted.speakerName?{speakerName:extracted.speakerName}:{}),...(extracted.role?{role:extracted.role}:{}),
-   // ALIBI_TEMPLATE pins one template (e.g. for demos); otherwise the first extraction picks it and it stays.
-   vibe:(['showcase','lowercase','geist'].includes(process.env.ALIBI_TEMPLATE??'')?process.env.ALIBI_TEMPLATE as 'showcase':undefined)??session.claims?.vibe??extracted.vibe,skills:extracted.skills,
+   vibe:session.claims?.vibe??extracted.vibe,skills:extracted.skills,
    projects:extracted.projects.map(p=>({id:matchProjectId(session,p.name),name:p.name,saidAbout:p.saidAbout,platform:p.platform})),
    ...(extracted.contactEmail&&transcript.toLowerCase().includes(extracted.contactEmail.toLowerCase())?{contactEmail:extracted.contactEmail}:{}),
   });
   session.claims=claims;
-  // A later pass can come back without a bio; keep the earlier one instead of the plain fallback.
-  const fresh=heroFrom(extracted),prev=session.portfolio.hero;
-  const hero=fresh&&prev&&!extracted.bio?{...fresh,bio:prev.bio,currently:extracted.currently.length?fresh.currently:prev.currently}:fresh??prev;
+  const hero=heroFrom(extracted)??session.portfolio.hero;
   const handle=hero?.handle??'builder';
   // Claims are pinned: keep sections we already built, add new ones as pending skeletons.
   const projects={...session.portfolio.projects};
   // A longer spoken name for a known project replaces the clipped one ("Lease" -> "Lease Lens").
   for(const p of claims.projects){const cur=projects[p.id];if(cur&&cur.title!==p.name&&p.name.length>cur.title.length)projects[p.id]={...cur,title:p.name};}
-  // New projects, plus one rewrite of a card written from an early, thin description
-  // (said-about text has since grown by half or more), so a half-heard first sentence doesn't stick.
-  const said=(p:{saidAbout:string[]})=>p.saidAbout.join(' ').length;
-  const todo=claims.projects.filter(p=>{
-   const before=session.generatedFrom.get(p.id);
-   if(before===undefined)return !projects[p.id];
-   return before>0&&said(p)>=before*1.5;
-  });
+  const todo=claims.projects.filter(p=>!projects[p.id]&&!session.generatedFrom.has(p.id));
   for(const p of todo)if(!projects[p.id])projects[p.id]=pendingSection(p.name);
   await publish(session,{templateId:claims.vibe,...(hero?{hero}:{}),skills:claims.skills.length?claims.skills:session.portfolio.skills,projects,contradictions:extracted.contradictions});
   session.metrics.parallelTaskCount=Math.max(session.metrics.parallelTaskCount,todo.length*2);
 
   // Card and mock UI are independent, so both run at once; each publishes the moment it lands.
   await Promise.all(todo.map(async p=>{
-   // A rewrite stores -1 so each project is rewritten at most once.
-   session.generatedFrom.set(p.id,session.generatedFrom.has(p.id)?-1:said(p));
+   session.generatedFrom.set(p.id,p.saidAbout.length);
    const card=timed(session,`write_project:${p.id}`,()=>writeProject(p,{role:claims.role,skills:claims.skills},signal)).then(async({value})=>{
     const previousMock=session.portfolio.projects[p.id]?.mockHtml;
     await publish(session,{...session.portfolio,projects:{...session.portfolio.projects,[p.id]:readySection(p.name,handle,value,previousMock)}});

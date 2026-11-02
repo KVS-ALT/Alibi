@@ -16,28 +16,6 @@ function sessionInfo(value: unknown): SessionInfo | null {
  return typeof data.id === "string" && typeof data.slug === "string" && data.id.length < 200 && /^[a-zA-Z0-9_-]+$/.test(data.slug)
   ? { id: data.id, slug: data.slug, url: `/p/${encodeURIComponent(data.slug)}` } : null;
 }
-interface Task { name: string; ms: number; ok: boolean }
-
-// "[S1] hi there [S2] hello" -> [{ speaker: "S1", text: "hi there" }, ...]
-function turns(transcript: string) {
- const out: { speaker?: string; text: string }[] = [];
- for (const part of transcript.split(/(?=\[(?:S\d{1,3}|UU)\])/)) {
-  const m = part.match(/^\[(S\d{1,3}|UU)\]\s*/);
-  const text = (m ? part.slice(m[0].length) : part).trim();
-  if (text) out.push({ speaker: m?.[1], text });
- }
- return out;
-}
-
-function taskLabel(name: string, portfolio: Portfolio | null) {
- const [kind, id] = name.split(":");
- const title = (id && portfolio?.projects[id]?.title) || id;
- if (kind === "extract_claims") return "Understanding the conversation";
- if (kind === "write_project") return `Writing ${title}`;
- if (kind === "make_mock") return `Designing the ${title} screen`;
- return name;
-}
-
 function message(value: unknown, fallback: string) {
  if (!value || typeof value !== "object") return fallback;
  const error = (value as { error?: unknown }).error;
@@ -55,9 +33,6 @@ export default function ConversationHome() {
  const [error, setError] = useState<string | undefined>();
  const [ending, setEnding] = useState(false);
  const [availability, setAvailability] = useState<"loading" | "ready" | "unavailable">("loading");
- const [transcript, setTranscript] = useState("");
- const [builder, setBuilder] = useState<string | undefined>();
- const [tasks, setTasks] = useState<Task[]>([]);
  const version = useRef(-1), cueFloor = useRef(-1), userStarted = useRef(false);
  const createdHere = useRef(new Set<string>());
  const request = useRef<AbortController | null>(null);
@@ -113,9 +88,6 @@ export default function ConversationHome() {
     const data = await response.json();
     if (stopped || data.id !== session!.id) return;
     if (["idle", "listening", "building", "ready", "error"].includes(data.status)) setStatus(data.status);
-    if (typeof data.transcript === "string") setTranscript(data.transcript);
-    setBuilder(typeof data.builder === "string" ? data.builder : undefined);
-    if (Array.isArray(data.metrics?.tasks)) setTasks(data.metrics.tasks.slice(-12));
     if (typeof data.error === "string") setError(data.error.slice(0, 240));
     else if (data.status !== "error") setError(undefined);
     if (Number.isSafeInteger(data.version) && data.version >= version.current && data.portfolio) {
@@ -171,111 +143,25 @@ export default function ConversationHome() {
  const listening = capture.status === "listening", muted = capture.status === "muted";
  const busy = creating || capture.starting || ending;
  const Template = portfolio ? TEMPLATES[portfolio.templateId] : null;
- const label = ending ? "Finishing capture" : busy ? "Connecting" : listening ? "Pause microphone" : muted ? "Resume microphone" : "Start microphone";
- const notice = (capture.error ? `${capture.error}${capture.errorCode ? ` (${capture.errorCode})` : ""}` : undefined) || error || (availability === "unavailable" ? "Service not ready. Check the API keys in web/.env.local." : undefined);
- const state = ending ? "Finishing" : busy ? "Connecting" : listening ? "Listening" : muted ? "Paused" : status === "building" ? "Building" : portfolio && version.current > 0 ? "Ready" : availability === "loading" ? "Getting ready" : "Ready to listen";
- const lines = turns(transcript);
- const speakers = [...new Set(lines.map((l) => l.speaker).filter(Boolean))] as string[];
- const projectCount = portfolio ? Object.values(portfolio.projects).filter((p) => p.status === "ready").length : 0;
- // The preview's address bar shows the larper's own site, not the app's host.
- const pageUrl = portfolio?.hero?.handle && portfolio.hero.handle !== "builder" ? `${portfolio.hero.handle}.dev` : "";
-
+ const label = ending ? "Finishing capture" : busy ? "Connecting" : listening ? "Mute microphone" : muted ? "Resume microphone" : "Start microphone";
+ const notice = (capture.error ? `${capture.error}${capture.errorCode ? ` (${capture.errorCode})` : ""}` : undefined) || error || (availability === "unavailable" ? "Service not ready." : undefined);
  return (
-  <div className="flex min-h-svh flex-col bg-[#f4f4f5] text-neutral-900 lg:h-svh lg:flex-row">
-   {/* Control panel */}
-   <aside aria-label="Conversation" className="flex shrink-0 flex-col bg-[#0c0c0e] text-neutral-300 lg:w-[400px]">
-    <header className="flex items-center justify-between px-6 pb-4 pt-6">
-     <div className="flex items-center gap-2.5">
-      <div className="grid h-8 w-8 place-items-center rounded-lg bg-white text-sm font-bold text-black">A</div>
-      <div>
-       <div className="text-[15px] font-semibold leading-none text-white">Alibi</div>
-       <div className="mt-1 text-[11px] text-neutral-500">talk about it, it builds it</div>
-      </div>
+  <div className="min-h-svh bg-[#fbfafc] text-[#3c3345]">
+   {Template && portfolio ? <div className="pb-32"><Template portfolio={portfolio} /></div> : <main aria-label="Conversation preview" className="min-h-svh" />}
+   <div className="fixed inset-x-0 bottom-5 z-50 flex justify-center px-4 pb-[env(safe-area-inset-bottom)]">
+    <section aria-label="Microphone controls" className="max-w-full rounded-3xl border border-[#e5e1e8] bg-[#fbfafc] px-5 py-3 text-center">
+     <div className="flex items-center justify-center gap-3">
+      <button type="button" aria-label={label} disabled={busy || (!listening && availability !== "ready")} onClick={() => { if (listening) capture.mute(); else if (muted) void capture.resume(); else void start(); }} className="grid h-12 w-16 place-items-center rounded-full bg-[#63536f] text-white outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a] disabled:opacity-60">
+       <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1M12 18v4M8 22h8"/>{muted && <path d="M3 3l18 18"/>}</svg>
+      </button>
+      {(listening || muted) && <button type="button" aria-label="End listening" disabled={ending} onClick={() => void end()} className="grid h-11 w-11 place-items-center rounded-full border border-[#d5cddd] text-[#63536f] outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a]"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm bg-current"/></button>}
+      {session && portfolio && version.current > 0 && <a href={session.url} target="_blank" rel="noopener noreferrer" className="rounded-full border border-[#d5cddd] px-4 py-3 text-xs text-[#63536f] outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a]">Open portfolio</a>}
+      {session && <button type="button" aria-label="Start a new take" title="New take" onClick={restart} className="rounded-full border border-[#d5cddd] px-4 py-3 text-xs text-[#63536f] outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a]">↻ New take</button>}
      </div>
-     <span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${listening ? "bg-red-500/15 text-red-300" : status === "building" ? "bg-amber-400/15 text-amber-200" : "bg-white/5 text-neutral-400"}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${listening ? "animate-pulse bg-red-400" : status === "building" ? "animate-pulse bg-amber-300" : "bg-neutral-500"}`} />
-      {state}
-     </span>
-    </header>
-
-    <div className="flex items-center gap-3 px-6 pb-5">
-     <button type="button" aria-label={label} disabled={busy || (!listening && availability !== "ready")} onClick={() => { if (listening) capture.mute(); else if (muted) void capture.resume(); else void start(); }} className={`relative grid h-14 w-14 shrink-0 place-items-center rounded-full text-white transition outline-offset-4 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-40 ${listening ? "bg-red-500 shadow-[0_0_0_6px_rgba(239,68,68,0.18)]" : "bg-white text-black hover:bg-neutral-200"}`}>
-      <svg viewBox="0 0 24 24" className={`h-6 w-6 ${listening ? "text-white" : "text-black"}`} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1M12 18v4M8 22h8"/>{muted && <path d="M3 3l18 18"/>}</svg>
-     </button>
-     <div className="min-w-0 flex-1 text-[13px] leading-snug text-neutral-400">
-      {listening ? "Talk about what you've built. Finish your sentences; say each project's name clearly." : muted ? "Paused. Tap to keep talking." : portfolio ? "Tap the mic to keep adding to it." : "Tap the mic and start the conversation."}
-     </div>
-     {(listening || muted) && <button type="button" aria-label="End listening" disabled={ending} onClick={() => void end()} className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/15 text-neutral-300 hover:bg-white/5"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm bg-current"/></button>}
-    </div>
-    {notice && <p role="alert" className="mx-6 mb-4 rounded-lg bg-red-500/10 px-3 py-2 text-xs leading-relaxed text-red-300">{notice}</p>}
-
-    <section aria-label="Transcript" className="flex min-h-[180px] flex-1 flex-col border-t border-white/[0.06] lg:min-h-0">
-     <div className="flex items-center justify-between px-6 pb-2 pt-4 text-[11px] font-medium uppercase tracking-wider text-neutral-500">
-      <span>Transcript</span>
-      {speakers.length > 1 && <span className="normal-case tracking-normal text-neutral-600">{speakers.length} voices</span>}
-     </div>
-     <div className="flex-1 space-y-3 overflow-y-auto px-6 pb-4 text-[13.5px] leading-relaxed lg:max-h-none">
-      {lines.length === 0 && !capture.interimText && <p className="text-neutral-600">Nothing yet. Everything said shows up here, labelled by speaker.</p>}
-      {lines.map((l, i) => {
-       const you = l.speaker && l.speaker === builder;
-       return (
-        <div key={i} className="flex gap-2.5">
-         <span className={`mt-0.5 h-5 shrink-0 rounded px-1.5 text-[10px] font-semibold leading-5 ${you ? "bg-white text-black" : "bg-white/[0.07] text-neutral-400"}`}>{you ? "YOU" : l.speaker ?? "MIC"}</span>
-         <p className={you || !l.speaker ? "text-neutral-200" : "text-neutral-500"}>{l.text}</p>
-        </div>
-       );
-      })}
-      {capture.interimText && <p className="pl-9 text-neutral-500 italic">{capture.interimText}…</p>}
-     </div>
+     <p role="status" className="mt-2 min-h-4 text-xs text-[#74687f]">{ending ? "Finishing" : busy ? "Connecting" : status === "building" ? "Updating preview" : listening ? "Listening" : muted ? "Paused" : availability === "loading" ? "Getting ready" : ""}</p>
+     {notice && <p role="alert" className="mt-2 max-w-sm text-xs leading-relaxed text-[#7e4253]">{notice}</p>}
     </section>
-
-    <section aria-label="Build log" className="border-t border-white/[0.06] px-6 py-4">
-     <div className="mb-2 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-neutral-500">
-      <span>Build log</span>
-      {projectCount > 0 && <span className="normal-case tracking-normal text-neutral-600">{projectCount} project{projectCount === 1 ? "" : "s"} live</span>}
-     </div>
-     <ul className="space-y-1.5 font-mono text-[11.5px]">
-      {tasks.length === 0 && <li className="text-neutral-600">waiting for the first sentence…</li>}
-      {tasks.slice(-5).map((t, i) => (
-       <li key={i} className="flex items-center gap-2">
-        <span className={t.ok ? "text-emerald-400" : "text-amber-300"}>{t.ok ? "✓" : "~"}</span>
-        <span className="min-w-0 flex-1 truncate text-neutral-300">{taskLabel(t.name, portfolio)}</span>
-        <span className="text-neutral-600">{(t.ms / 1000).toFixed(1)}s</span>
-       </li>
-      ))}
-      {status === "building" && <li className="flex items-center gap-2 text-neutral-500"><span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-300" /> working…</li>}
-     </ul>
-    </section>
-
-    {session && (
-     <footer className="flex flex-wrap items-center gap-2 border-t border-white/[0.06] px-6 py-4">
-      {portfolio && version.current > 0 && <a href={session.url} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-white px-3.5 py-2 text-xs font-medium text-black hover:bg-neutral-200">Open portfolio ↗</a>}
-      <button type="button" aria-label="Start a new take" onClick={restart} className="rounded-lg border border-white/15 px-3.5 py-2 text-xs text-neutral-300 hover:bg-white/5">↻ New take</button>
-     </footer>
-    )}
-   </aside>
-
-   {/* Live portfolio */}
-   <main aria-label="Portfolio preview" className="flex min-h-[70svh] flex-1 flex-col p-3 lg:min-h-0 lg:p-5">
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06),0_12px_40px_-12px_rgba(0,0,0,0.12)] ring-1 ring-black/[0.06]">
-     <div className="flex items-center gap-3 border-b border-neutral-100 px-4 py-2.5">
-      <div className="flex gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-neutral-200" /><span className="h-2.5 w-2.5 rounded-full bg-neutral-200" /><span className="h-2.5 w-2.5 rounded-full bg-neutral-200" /></div>
-      <div className="mx-auto max-w-sm flex-1 truncate rounded-md bg-neutral-100 px-3 py-1 text-center text-[11px] text-neutral-500">{pageUrl || "your-portfolio"}</div>
-      <div className="w-12" />
-     </div>
-     <div className="relative min-h-0 flex-1 overflow-y-auto">
-      {Template && portfolio ? <Template portfolio={portfolio} /> : (
-       <div className="grid h-full min-h-[50svh] place-items-center p-8 text-center">
-        <div className="max-w-sm">
-         <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-neutral-100 text-neutral-500"><svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1M12 18v4M8 22h8"/></svg></div>
-         <h1 className="text-lg font-semibold">Your portfolio builds here, live</h1>
-         <p className="mt-2 text-sm leading-relaxed text-neutral-500">Start talking. Try: <span className="text-neutral-700">“I&apos;m John, I&apos;m a CS student. Last term I built a web app called LeaseLens…”</span></p>
-        </div>
-       </div>
-      )}
-     </div>
-    </div>
-   </main>
+   </div>
   </div>
  );
 }

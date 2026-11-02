@@ -5,14 +5,14 @@ This guide is included in every generation prompt. It sets the standard the port
 ## Names and identity
 
 - **Person:** use the name exactly as the speaker said it. Never invent a surname. If no name was said, leave it empty. Do not use placeholders like "Alex" or "Your portfolio".
-- **Handle:** lowercase first name plus surname or initial, letters only (for example `jmiller`, `samrivera`).
+- **Handle:** lowercase first name plus surname or initial, letters only (for example `priyas`, `samrivera`).
 - **Project names:** keep the speaker's exact spelling and capitalization ("shipit", "StudyMatch"). Speech-to-text may split or merge words; join them back the way a product would be written ("study match" becomes "StudyMatch").
 - **Unnamed projects:** if a project has no name, invent a short, brandable one-word name that fits the product (for example "Ledgerly" or "Repwise"). Never use descriptive labels like "Expense tracker app".
 - **Separate projects:** only create one when the speaker clearly describes another thing they built. A feature ("it also sends alerts") belongs to the existing project.
 
 ## Hero
 
-- **roles:** 2–3 short lowercase labels in the style "cs student", "builder", "ml + infra", "occasional designer". Use the school or company if it was said.
+- **roles:** 2–3 short lowercase labels in the style "cs @ uwaterloo", "builder", "ml + infra", "occasional designer". Use the school or company if it was said.
 - **bio:** two sentences in the first person. Name the projects and what makes them notable, with specifics. Don't open with clichés like "passionate", "I build small, useful things" or "tech enthusiast".
   - Shape: one sentence naming what you build and who uses it, with one concrete number per project, then one sentence on what you care about. Write it fresh from this speaker's projects.
 - **currently:** 2–3 short lowercase items, each concrete: "shipping shipit v2 with monorepo support", "ta for cs 136", "looking for summer 2027 swe internships". Never write "studying computer science" or "building apps".

@@ -107,6 +107,9 @@ async function publish(session:LiveSession,portfolio:PortfolioData){
 /** build_portfolio: extract claims, then write each new/changed project in parallel, publishing each section as it lands. */
 async function build(session:LiveSession){
  if(session.building||session.revision<=session.acceptedRevision||!providerMetadata().generation.enabled)return;
+ // In a multi-voice conversation, wait until someone actually claims to have built something;
+ // otherwise the first speaker (often the one asking) ends up as the portfolio's owner.
+ {const t=conversation(session);if(/\[S\d{1,3}\]/.test(t)&&!builderSpeaker(t))return;}
  if(session.builds>=MAX_BUILDS_PER_SESSION()){session.error='Build limit for this session reached. Your last portfolio is preserved.';return;}
  session.builds++;session.firstDirtyAt=undefined;
  // While the mic is live, the last sentence may be half-spoken ("an app called lease"); build from complete ones.
@@ -128,7 +131,9 @@ async function build(session:LiveSession){
    ...(extracted.contactEmail&&transcript.toLowerCase().includes(extracted.contactEmail.toLowerCase())?{contactEmail:extracted.contactEmail}:{}),
   });
   session.claims=claims;
-  const hero=heroFrom(extracted)??session.portfolio.hero;
+  // A later pass can come back without a bio; keep the earlier one instead of the plain fallback.
+  const fresh=heroFrom(extracted),prev=session.portfolio.hero;
+  const hero=fresh&&prev&&!extracted.bio?{...fresh,bio:prev.bio,currently:extracted.currently.length?fresh.currently:prev.currently}:fresh??prev;
   const handle=hero?.handle??'builder';
   // Claims are pinned: keep sections we already built, add new ones as pending skeletons.
   const projects={...session.portfolio.projects};

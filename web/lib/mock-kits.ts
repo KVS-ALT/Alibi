@@ -62,7 +62,8 @@ function normalize(spec: MockSpec) {
     action: bare(spec.action) || "New",
     user: spec.user || "you",
     stats: pad(spec.stats, 3, (i) => ({ label: ["Today", "This week", "Total"][i], value: ["12", "84", "1.2k"][i], note: "" })),
-    items: pad(spec.items, 4, (i) => ({ title: `Item ${i + 1}`, subtitle: "", meta: `${i + 2}m ago`, tag: "", status: "neutral" as Status })),
+    // Rows are never padded: a fake "Item 4" row looks worse than one fewer row.
+    items: spec.items,
   };
 }
 type Spec = ReturnType<typeof normalize>;

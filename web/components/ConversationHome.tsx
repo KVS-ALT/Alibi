@@ -177,7 +177,8 @@ export default function ConversationHome() {
  const lines = turns(transcript);
  const speakers = [...new Set(lines.map((l) => l.speaker).filter(Boolean))] as string[];
  const projectCount = portfolio ? Object.values(portfolio.projects).filter((p) => p.status === "ready").length : 0;
- const pageUrl = session && typeof window !== "undefined" ? `${window.location.host}${session.url}` : "";
+ // The preview's address bar shows the larper's own site, not the app's host.
+ const pageUrl = portfolio?.hero?.handle && portfolio.hero.handle !== "builder" ? `${portfolio.hero.handle}.dev` : "";
 
  return (
   <div className="flex min-h-svh flex-col bg-[#f4f4f5] text-neutral-900 lg:h-svh lg:flex-row">

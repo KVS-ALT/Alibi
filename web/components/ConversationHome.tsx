@@ -126,6 +126,13 @@ export default function ConversationHome() {
   finally { if (!controller.signal.aborted) setCreating(false); }
  }, [creating, pendingStart, session, availability]);
 
+ // New take: stop the mic, forget this tab's session and reload to an empty page (old /p links keep working).
+ const restart = useCallback(() => {
+  try { captureRef.current.end(); } catch {}
+  try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
+  window.location.reload();
+ }, []);
+
  const end = useCallback(async () => {
   if (ending) return;
   setEnding(true);
@@ -149,6 +156,7 @@ export default function ConversationHome() {
       </button>
       {(listening || muted) && <button type="button" aria-label="End listening" disabled={ending} onClick={() => void end()} className="grid h-11 w-11 place-items-center rounded-full border border-[#d5cddd] text-[#63536f] outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a]"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm bg-current"/></button>}
       {session && portfolio && version.current > 0 && <a href={session.url} target="_blank" rel="noopener noreferrer" className="rounded-full border border-[#d5cddd] px-4 py-3 text-xs text-[#63536f] outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a]">Open portfolio</a>}
+      {session && <button type="button" aria-label="Start a new take" title="New take" onClick={restart} className="rounded-full border border-[#d5cddd] px-4 py-3 text-xs text-[#63536f] outline-offset-4 focus-visible:outline-2 focus-visible:outline-[#78648a]">↻ New take</button>}
      </div>
      <p role="status" className="mt-2 min-h-4 text-xs text-[#74687f]">{ending ? "Finishing" : busy ? "Connecting" : status === "building" ? "Updating preview" : listening ? "Listening" : muted ? "Paused" : availability === "loading" ? "Getting ready" : ""}</p>
      {notice && <p role="alert" className="mt-2 max-w-sm text-xs leading-relaxed text-[#7e4253]">{notice}</p>}

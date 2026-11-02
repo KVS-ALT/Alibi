@@ -2,7 +2,7 @@ import 'server-only';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Claims, Portfolio, type Claims as ClaimsData, type Metrics, type Portfolio as PortfolioData } from '@alibi/shared';
 import { db, hasDb } from './db';
-import { extractClaims, generationConfigured, generationModel, heroFrom, makeMock, pendingSection, projectId, readySection, writeProject } from './generation';
+import { builderSpeaker, extractClaims, generationConfigured, generationModel, heroFrom, makeMock, pendingSection, projectId, readySection, writeProject } from './generation';
 
 export class LiveHttpError extends Error { constructor(public status:number,public code:string,message:string){super(message);} }
 export interface LiveSession {
@@ -10,7 +10,7 @@ export interface LiveSession {
  portfolio:PortfolioData;claims?:ClaimsData;version:number;active:boolean;error?:string;
  createdAt:number;updatedAt:number;segments:Map<string,string>;revision:number;acceptedRevision:number;
  building:boolean;timer?:ReturnType<typeof setTimeout>;firstDirtyAt?:number;abort?:AbortController;
- builds:number;metrics:Metrics;generatedFrom:Map<string,number>;
+ builds:number;metrics:Metrics;generatedFrom:Map<string,number>;builder?:string;
 }
 interface State { sessions:Map<string,LiveSession> }
 declare global { var __alibiLiveSessions:State|undefined; }
@@ -22,7 +22,7 @@ function equal(a:string,b:string){const x=Buffer.from(a),y=Buffer.from(b);return
 function envInt(name:string,fallback:number){const value=Number(process.env[name]);return Number.isSafeInteger(value)&&value>0?value:fallback;}
 
 // Usage caps are per session and configurable; defaults comfortably cover a demo and rehearsals.
-const MAX_BUILDS_PER_SESSION=()=>envInt('MAX_BUILDS_PER_SESSION',30);
+const MAX_BUILDS_PER_SESSION=()=>envInt('MAX_BUILDS_PER_SESSION',1_000_000);
 // Compare with the Host header the browser actually used; Next's request.url says "localhost" even
 // when the page was opened at 127.0.0.1, which rejected every request from that address.
 function assertSameOrigin(request:Request){
@@ -33,9 +33,9 @@ function assertSameOrigin(request:Request){
 export function getLiveRuntime(){
  const liveEnabled=process.env.LIVE_PROVIDER_CALLS_ENABLED==='true';
  const speechEnabled=liveEnabled&&process.env.SPEECHMATICS_ENABLED!=='false'&&!!process.env.SPEECHMATICS_API_KEY?.trim();
- const audio=envInt('MAX_AUDIO_SECONDS_PER_SESSION',600);
+ const audio=envInt('MAX_AUDIO_SECONDS_PER_SESSION',4*3600);
  return {liveEnabled,speechEnabled,speechKey:process.env.SPEECHMATICS_API_KEY?.trim()||undefined,
-  limits:{maxSessionAudioSeconds:audio,maxGlobalAudioSeconds:envInt('MAX_AUDIO_SECONDS_GLOBAL',3*3600),maxWallMs:audio*1000+60_000,maxStreams:envInt('MAX_SPEECH_STREAMS',4),maxStartsGlobal:envInt('MAX_SPEECH_STARTS_GLOBAL',100)},
+  limits:{maxSessionAudioSeconds:audio,maxGlobalAudioSeconds:envInt('MAX_AUDIO_SECONDS_GLOBAL',24*3600),maxWallMs:audio*1000+60_000,maxStreams:envInt('MAX_SPEECH_STREAMS',4),maxStartsGlobal:envInt('MAX_SPEECH_STARTS_GLOBAL',100)},
  };
 }
 export function providerMetadata(){const runtime=getLiveRuntime();return {
@@ -73,12 +73,15 @@ export function setSpeechState(id:string,status:'listening'|'idle'){
  if(!session.active&&session.revision>session.acceptedRevision){if(session.timer)clearTimeout(session.timer);void build(session);}
  void save(session).catch(()=>{session.error='Portfolio persistence failed.';});
 }
-export function conversation(session:LiveSession){return [...session.segments.values()].join(' ').replace(/\s+([,.;:!?])/g,'$1').replace(/\s+/g,' ').trim();}
-export function ingestTranscript(id:string,segment:{id:string;text:string;isFinal:boolean}){
+// Speaker-tagged lines ("[S1] ..."); consecutive lines from one speaker read as a single turn.
+export function conversation(session:LiveSession){let previous='';return [...session.segments.values()].map(value=>{const tag=value.match(/^\[(S\d{1,3}|UU)\]\s*/);const same=!!tag&&tag[1]===previous;previous=tag?.[1]??'';return same?value.slice(tag![0].length):value;}).join(' ').replace(/\s+([,.;:!?])/g,'$1').replace(/\s+/g,' ').trim();}
+export function ingestTranscript(id:string,segment:{id:string;text:string;isFinal:boolean;speaker?:string}){
  const session=state.sessions.get(id);if(!session||!segment.isFinal||typeof segment.text!=='string'||!segment.text.trim()||segment.text.length>4000)return;
  if(session.segments.has(segment.id)&&session.segments.get(segment.id)===segment.text.trim())return;
- if(!session.segments.has(segment.id)&&session.segments.size>=512)return;
- session.segments.set(segment.id,segment.text.trim());if(conversation(session).length>12000){session.segments.delete(segment.id);session.error='Conversation length limit reached.';return;}
+ if(!session.segments.has(segment.id)&&session.segments.size>=512)session.segments.delete(session.segments.keys().next().value!);
+ session.segments.set(segment.id,(segment.speaker&&/^(S\d{1,3}|UU)$/.test(segment.speaker)?`[${segment.speaker}] `:'')+segment.text.trim());while(session.segments.size>1&&conversation(session).length>12000)session.segments.delete(session.segments.keys().next().value!);
+ // A different voice took over as the builder mid-build: drop that build now instead of finishing the wrong person's portfolio.
+ {const b=builderSpeaker(conversation(session));if(b&&session.builder&&b!==session.builder&&session.building)session.abort?.abort();}
  session.revision++;session.updatedAt=Date.now();session.firstDirtyAt??=Date.now();
  // Debounce: wait for a pause, but never hold a change longer than ~6s.
  if(session.timer)clearTimeout(session.timer);session.timer=setTimeout(()=>void build(session),Math.min(1500,Math.max(0,6000-(Date.now()-session.firstDirtyAt))));
@@ -112,7 +115,11 @@ async function build(session:LiveSession){
  session.building=true;session.status='building';session.error=undefined;session.abort=new AbortController();
  const signal=session.abort.signal;
  try{
-  const extracted=(await timed(session,'extract_claims',()=>extractClaims(transcript,session.claims,signal))).value;
+  // If a different voice turns out to be the builder, earlier extraction was about the wrong person: start over.
+  const builder=builderSpeaker(transcript);
+  if(builder&&session.builder&&builder!==session.builder){session.claims=undefined;session.generatedFrom.clear();session.portfolio={...session.portfolio,hero:undefined,skills:[],projects:{}};}
+  if(builder)session.builder=builder;
+  const extracted=(await timed(session,'extract_claims',()=>extractClaims(transcript,session.claims,signal,builder))).value;
   const claims=Claims.parse({
    ...(extracted.speakerName?{speakerName:extracted.speakerName}:{}),...(extracted.role?{role:extracted.role}:{}),
    vibe:session.claims?.vibe??extracted.vibe,skills:extracted.skills,
@@ -145,8 +152,9 @@ async function build(session:LiveSession){
   session.acceptedRevision=revision;session.status=session.active?'listening':'ready';session.metrics.readyAt=Date.now();
   await save(session).catch(()=>{});
  }catch(error){
-  if(!signal.aborted)console.error('[alibi] build failed',error);
-  session.error='The live generation could not finish. Your last portfolio is preserved.';session.status='error';
+  // An abort means a newer build supersedes this one (e.g. the builder changed); the finally block reschedules it.
+  if(signal.aborted)session.status=session.active?'listening':'building';
+  else{console.error('[alibi] build failed',error);session.error='The live generation could not finish. Your last portfolio is preserved.';session.status='error';}
  }finally{
   session.building=false;session.abort=undefined;
   if(session.revision>session.acceptedRevision&&session.status!=='error'){if(session.timer)clearTimeout(session.timer);session.timer=setTimeout(()=>void build(session),300);}

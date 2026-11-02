@@ -52,6 +52,7 @@ async function chatOnce(model: string, messages: Message[], opts: { maxTokens: n
       max_tokens: opts.maxTokens,
       temperature: 0.4,
       ...(p.reasoningEffort ? { reasoning_effort: p.reasoningEffort } : {}),
+      ...(/deepseek/i.test(model) ? { chat_template_kwargs: { thinking: false } } : {}),
       ...(opts.json ? { response_format: { type: "json_object" } } : {}),
     }),
   });
@@ -147,12 +148,25 @@ const Extracted = z.object({
 });
 export type Extracted = z.infer<typeof Extracted>;
 
-export async function extractClaims(transcript: string, previous: Claims | undefined, signal?: AbortSignal): Promise<TaskResult<Extracted>> {
+// The builder is the voice making the most first-person "I built ..." claims; others are context.
+export function builderSpeaker(transcript: string): string | undefined {
+  const counts = new Map<string, { n: number; last: number }>();
+  for (const m of transcript.matchAll(/\[(S\d{1,3})\]\s*([^[]*)/g)) {
+    const n = (m[2].match(/\b(?:i|we)(?:'ve| have)?\s+(?:also\s+|actually\s+|just\s+)?(?:built|made|created|shipped|launched|developed|wrote|designed|started)\b/gi) ?? []).length;
+    if (n) counts.set(m[1], { n: (counts.get(m[1])?.n ?? 0) + n, last: m.index! });
+  }
+  // Ties go to the later claimer: the person answering "what do you work on?" is the one larping.
+  return [...counts].sort((a, b) => b[1].n - a[1].n || b[1].last - a[1].last)[0]?.[0];
+}
+
+export async function extractClaims(transcript: string, previous: Claims | undefined, signal?: AbortSignal, builder?: string): Promise<TaskResult<Extracted>> {
   const system = withGuide([
     "You extract what a speaker claims about themselves at a networking event, for a portfolio generator.",
     UNTRUSTED,
     `Return one JSON object with keys: speakerName (string or null), role (string or null), vibe ('lowercase' | 'showcase' | 'geist'), skills (string[]: languages, frameworks and tools only, e.g. 'Go', 'PyTorch'; never fields like 'computer science'), projects ([{name, platform, saidAbout: string[]}], at most 3; platform is one of ${PLATFORMS.join(" | ")}), contactEmail (the OTHER person's email if they said it, else null), roles, bio, currently, contradictions (string[]).`,
-    "Only include projects the speaker said they built. Never invent projects. saidAbout holds near-verbatim claims from the transcript, including platform words like 'Discord', 'iOS' or 'Chrome extension'.",
+    "The transcript may contain several people, tagged [S1], [S2], [S3] by voice. The builder is the person making first-person claims about things they built; everyone else (recruiters, engineers asking questions) is context. Extract only the builder's name, projects, skills and claims, never another speaker's employer or work. If there are no tags, it is one speaker.",
+    builder ? `The builder is ${builder}. Use only lines tagged [${builder}] for the name, role, projects, skills and claims; lines from other speakers are questions and context only.` : "",
+    "Only include projects the builder said they built. Never invent projects. saidAbout holds near-verbatim claims from the transcript, including platform words like 'Discord', 'iOS' or 'Chrome extension'.",
     "vibe: 'geist' for infra/devtools/backend people, 'lowercase' for designers or a casual tone, otherwise 'showcase'.",
     "contradictions: things the speaker said that conflict with each other or with the previous claims. Usually empty.",
     previous ? "Previous claims are pinned: keep every previous project with the same name, spelling and platform, and keep earlier facts unless the speaker corrected them. Add new information." : "",
@@ -184,7 +198,7 @@ export function heroFrom(x: Extracted): Hero | undefined {
   return {
     name,
     handle: name.toLowerCase().replace(/[^a-z0-9]/g, "") || "builder",
-    roles: x.roles.length ? x.roles : [x.role?.toLowerCase() || "student developer", "builder"],
+    roles: [...new Set(x.roles.length ? x.roles : [x.role?.toLowerCase() || "student developer", "builder"])],
     bio: x.bio || (projects.length ? `I built ${projects.join(", ")}.` : ""),
     currently: x.currently.length ? x.currently : projects.slice(0, 2).map((p) => `working on ${p.toLowerCase()}`),
   };
@@ -193,20 +207,20 @@ export function heroFrom(x: Extracted): Hero | undefined {
 // ---------- write_project ----------
 
 const Card = z.object({
-  category: str(24).transform((s) => s.toUpperCase()).catch("PROJECT"),
+  category: str(32).transform((s) => s.toUpperCase()).catch("PROJECT"),
   year: z.coerce.number().int().min(2019).max(new Date().getFullYear()).catch(new Date().getFullYear()),
-  tagline: str(140).pipe(z.string().min(1)),
-  summary: str(600).pipe(z.string().min(1)),
-  highlights: z.array(str(200)).min(1).transform((a) => a.slice(0, 3)),
+  tagline: str(220).pipe(z.string().min(1)),
+  summary: str(1200).pipe(z.string().min(1)),
+  highlights: z.array(str(320)).min(1).transform((a) => a.slice(0, 3)),
   metrics: z
-    .array(z.object({ label: str(30), value: z.coerce.string().transform((s) => s.slice(0, 16)) }))
+    .array(z.object({ label: str(48), value: z.coerce.string().transform((s) => s.slice(0, 24)) }))
     .catch([])
     .transform((a) => a.filter((m) => !/million|billion|\d\s*[mb]\b/i.test(m.value)).slice(0, 3)),
-  stack: z.array(str(32)).catch([]).transform((a) => a.slice(0, 6)),
+  stack: z.array(str(48)).catch([]).transform((a) => a.slice(0, 6)),
   diagramMermaid: z.string().max(1200).nullish().catch(undefined),
   commits: z.coerce.number().int().min(10).max(1500).catch(120),
   stars: z.coerce.number().int().min(0).max(400).catch(18),
-  lastPushed: str(20).catch("3 days ago"),
+  lastPushed: str(32).catch("3 days ago"),
 });
 type Card = z.infer<typeof Card>;
 

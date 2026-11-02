@@ -14,7 +14,7 @@ This guide is included in every generation prompt. It sets the standard the port
 
 - **roles:** 2–3 short lowercase labels in the style "cs @ uwaterloo", "builder", "ml + infra", "occasional designer". Use the school or company if it was said.
 - **bio:** two sentences in the first person. Name the projects and what makes them notable, with specifics. Don't open with clichés like "passionate", "I build small, useful things" or "tech enthusiast".
-  - Good, written for a different person, so don't copy it: "I build small tools that people actually keep using: a deploy CLI six student clubs run on, a study-group matcher that made it through a whole semester, and an iOS app that tells you what to cook from a photo of your fridge."
+  - Shape: one sentence naming what you build and who uses it, with one concrete number per project, then one sentence on what you care about. Write it fresh from this speaker's projects.
 - **currently:** 2–3 short lowercase items, each concrete: "shipping shipit v2 with monorepo support", "ta for cs 136", "looking for summer 2027 swe internships". Never write "studying computer science" or "building apps".
 
 ## Project overview (one card per project)

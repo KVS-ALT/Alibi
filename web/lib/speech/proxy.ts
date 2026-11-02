@@ -35,6 +35,26 @@ interface Stream {
 }
 interface Session { bytes: number; starts: number; stream?: Stream }
 const fail = (code: string): SpeechProxyResult => ({ ok: false, code });
+// Optional custom vocabulary for names you plan to say (SPEECHMATICS_VOCAB="LeaseLens,Standup").
+const VOCAB = (process.env.SPEECHMATICS_VOCAB ?? '').split(',').map(v => v.trim()).filter(Boolean).slice(0, 100).map(content => ({ content }));
+
+// Diarization labels each word (alternatives[0].speaker = "S1", "S2", or "UU" for unknown). Group consecutive words by
+// speaker; punctuation joins the previous word without a space.
+function speakerTurns(results: unknown, fallback: string): { text: string; speaker?: string }[] {
+  const turns: { text: string; speaker?: string }[] = [];
+  if (Array.isArray(results)) {
+    for (const r of results as { type?: string; alternatives?: { content?: unknown; speaker?: unknown }[] }[]) {
+      const alt = r?.alternatives?.[0];
+      if (typeof alt?.content !== 'string' || !alt.content.trim()) continue;
+      const last = turns[turns.length - 1];
+      const speaker = typeof alt.speaker === 'string' && /^(S\d{1,3}|UU)$/.test(alt.speaker) ? alt.speaker : undefined;
+      if (r.type === 'punctuation' && last) { last.text += alt.content; continue; }
+      if (last && last.speaker === speaker) last.text += ' ' + alt.content;
+      else turns.push({ text: alt.content, ...(speaker ? { speaker } : {}) });
+    }
+  }
+  return turns.length ? turns : [{ text: fallback.trim() }];
+}
 const positive = (value: number | undefined) => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
 
 /** No audio retention, provider credentials in responses, or automatic reconnect. Caps survive stream restarts. */
@@ -111,14 +131,14 @@ export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependen
         const socket = dependencies!.createSocket!(url.toString()); stream.socket = socket;
         socket.onopen = () => {
           if (stream.phase !== 'starting') return;
-          try { socket.send(JSON.stringify({ message: 'StartRecognition', audio_format: { type: 'raw', encoding: 'pcm_s16le', sample_rate: 16000 }, transcription_config: { language: 'en', enable_partials: true, model: 'enhanced', max_delay: 0.7 } })); }
+          try { socket.send(JSON.stringify({ message: 'StartRecognition', audio_format: { type: 'raw', encoding: 'pcm_s16le', sample_rate: 16000 }, transcription_config: { language: 'en', enable_partials: true, operating_point: 'enhanced', max_delay: 0.7, diarization: 'speaker', speaker_diarization_config: { max_speakers: 4 }, ...(VOCAB.length ? { additional_vocab: VOCAB } : {}) } })); }
           catch { finish(stream, 'connection_error'); }
         };
         socket.onmessage = event => {
           if (stream.phase === 'ended') return;
           try {
             if (typeof event.data !== 'string' || event.data.length > 65536) { finish(stream, 'invalid_provider_response'); return; }
-            const value = JSON.parse(event.data) as { message?: string; seq_no?: number; forced?: boolean; metadata?: { transcript?: unknown; start_time?: number; end_time?: number } };
+            const value = JSON.parse(event.data) as { message?: string; seq_no?: number; forced?: boolean; metadata?: { transcript?: unknown; start_time?: number; end_time?: number }; results?: unknown };
             if (value.message === 'RecognitionStarted' && stream.phase === 'starting') {
               stream.phase = 'active'; if (stream.handshake) clearTimeout(stream.handshake);
               stream.resolveReady({ ok: true, streamId: stream.id }); emit(stream, { type: 'state', state: 'active' });
@@ -130,12 +150,16 @@ export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependen
               const isFinal = value.message === 'AddTranscript', key = JSON.stringify([value.metadata?.start_time, value.metadata?.end_time, text]);
               if (isFinal && stream.finals.has(key)) return;
               if (!stream.pendingSegment) stream.pendingSegment = `${stream.sessionId}:speechmatics:${stream.id}:${++stream.segmentIndex}`;
-              const segment = { sessionId: stream.sessionId, segmentId: stream.pendingSegment, text: text.trim(), isFinal };
+              const base = stream.pendingSegment;
               if (isFinal) { stream.finals.add(key); stream.pendingSegment = ''; if (stream.finals.size > 10000) { finish(stream, 'transcript_limit'); return; } }
-              if (segment.text) {
+              // Finals are split into speaker turns (S1, S2, ...) so the server knows who said what; partials stay whole.
+              const turns = isFinal ? speakerTurns(value.results, text) : [{ text: text.trim() }];
+              turns.forEach((turn, i) => {
+                if (!turn.text) return;
+                const segment: TranscriptSegment = { sessionId: stream.sessionId, segmentId: turns.length > 1 ? `${base}:${i}` : base, text: turn.text, isFinal, ...(turn.speaker ? { speaker: turn.speaker } : {}) };
                 if (segment.isFinal) dependencies?.onSegment?.(segment);
                 emit(stream, { type: 'segment', segment });
-              }
+              });
             } else if (value.message === 'EndOfUtterance' && value.forced === true) stream.utteranceWait?.();
             else if (value.message === 'Error') { console.warn('[speech] provider error', event.data); finish(stream, 'provider_error'); }
           } catch { finish(stream, 'invalid_provider_response'); }

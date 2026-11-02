@@ -29,7 +29,7 @@ export default function Lowercase({ portfolio }: { portfolio: Portfolio }) {
           <div className="flex gap-5 text-stone-500">
             <span className="text-stone-900">/</span>
             <a href="#work">work</a>
-            <span>museum</span>
+            <a href="#now">now</a>
           </div>
         </nav>
 
@@ -87,7 +87,7 @@ export default function Lowercase({ portfolio }: { portfolio: Portfolio }) {
         </section>
 
         {hero && hero.currently.length > 0 && (
-          <section className="mt-14">
+          <section id="now" className="mt-14">
             <h2 className="mb-3 text-sm text-stone-400">now</h2>
             <ul className="space-y-1 text-stone-600">
               {hero.currently.map((c) => (

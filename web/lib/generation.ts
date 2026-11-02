@@ -149,10 +149,13 @@ const Extracted = z.object({
 export type Extracted = z.infer<typeof Extracted>;
 
 // The builder is the voice making the most first-person "I built ..." claims; others are context.
+// First-person "I made a thing" phrasing: "I built", "I'm working on", "I've been building", "my app is"...
+const CLAIM = /\b(?:i|we)(?:'m|'ve|'re| am| are| have| was)?\s+(?:also\s+|actually\s+|just\s+|been\s+|currently\s+|recently\s+)*(?:built|building|made|making|created|creating|shipped|launched|developed|developing|wrote|writing|designed|designing|started|starting|coded|working on)\b|\bmy (?:project|side project|app|startup|bot|tool|website|extension)\b/gi;
+
 export function builderSpeaker(transcript: string): string | undefined {
   const counts = new Map<string, { n: number; last: number }>();
   for (const m of transcript.matchAll(/\[(S\d{1,3})\]\s*([^[]*)/g)) {
-    const n = (m[2].match(/\b(?:i|we)(?:'ve| have)?\s+(?:also\s+|actually\s+|just\s+)?(?:built|made|created|shipped|launched|developed|wrote|designed|started)\b/gi) ?? []).length;
+    const n = (m[2].match(CLAIM) ?? []).length;
     if (n) counts.set(m[1], { n: (counts.get(m[1])?.n ?? 0) + n, last: m.index! });
   }
   // Ties go to the later claimer: the person answering "what do you work on?" is the one larping.

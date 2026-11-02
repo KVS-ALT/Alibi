@@ -25,7 +25,7 @@ export interface SpeechProxyDependencies {
   onSegment?: (segment: TranscriptSegment) => void;
 }
 interface Stream {
-  id: string; sessionId: string; phase: 'starting' | 'active' | 'ended'; reason?: string;
+  id: string; sessionId: string; phase: 'starting' | 'active' | 'ended'; reason?: string; closing?: boolean;
   abort: AbortController; socket?: ProxySocket; deadline?: ReturnType<typeof setTimeout>; handshake?: ReturnType<typeof setTimeout>;
   ready: Promise<SpeechProxyResult>; resolveReady(result: SpeechProxyResult): void;
   listeners: Set<(event: SpeechProxyEvent) => boolean | void>; buffer: SpeechProxyEvent[]; eventIndex: number;
@@ -161,6 +161,7 @@ export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependen
                 emit(stream, { type: 'segment', segment });
               });
             } else if (value.message === 'EndOfUtterance' && value.forced === true) stream.utteranceWait?.();
+            else if (value.message === 'EndOfTranscript') finish(stream, 'ended');
             else if (value.message === 'Error') { console.warn('[speech] provider error', event.data); finish(stream, 'provider_error'); }
           } catch { finish(stream, 'invalid_provider_response'); }
         };
@@ -173,6 +174,7 @@ export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependen
     const stream = current(input), session = sessions.get(input.sessionId);
     if (!stream || !session) return fail('stream_not_found');
     if (stream.phase !== 'active') return fail(stream.reason ?? 'stream_inactive');
+    if (stream.closing) return { ok: true, streamId: stream.id }; // audio after End is ignored
     const bytes = input.audio?.byteLength;
     if (!(input.audio instanceof Uint8Array) || !bytes || bytes > 65536 || bytes % 2) { finish(stream, 'invalid_audio'); return fail('invalid_audio'); }
     if (session.bytes + bytes > sessionCap || globalBytes + bytes > globalCap) { finish(stream, 'audio_limit'); return fail('audio_limit'); }
@@ -189,7 +191,7 @@ export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependen
     if (!stream || stream.listeners.size) return null;
     stream.listeners.add(listener); const buffered = stream.buffer.splice(0);
     for (const event of buffered) { try { if (listener(event) === false) { finish(stream, 'client_backpressure'); break; } } catch { finish(stream, 'client_disconnected'); break; } }
-    return () => { stream.listeners.delete(listener); finish(stream, 'client_disconnected'); };
+    return () => { stream.listeners.delete(listener); drain(stream); };
   }
   async function flush(identity: SpeechProxyIdentity): Promise<SpeechProxyResult> {
     const stream = current(identity); if (!stream || stream.phase !== 'active') return fail('stream_inactive');
@@ -213,9 +215,19 @@ export function createSpeechmaticsProxy(config: SpeechProxyConfig = {}, dependen
     return stream.flushPromise;
   }
   function endSession(sessionId: string) { const stream = sessions.get(sessionId)?.stream; if (stream) finish(stream, 'ended'); }
+  // Graceful stop: tell Speechmatics the audio is over and keep accepting finals until it sends
+  // EndOfTranscript. Closing straight away dropped the last few seconds of speech (finals lag the
+  // audio, more so with speaker labels on). Used for both an explicit End and the browser disconnecting.
+  function drain(stream: Stream) {
+    if (stream.phase !== 'active' || !stream.socket || stream.socket.readyState !== 1) { finish(stream, 'ended'); return; }
+    if (stream.closing) return;
+    stream.closing = true;
+    try { stream.socket.send(JSON.stringify({ message: 'EndOfStream', last_seq_no: stream.sent })); } catch { finish(stream, 'ended'); return; }
+    setTimeout(() => finish(stream, 'ended'), 8000);
+  }
   function endStream(identity: SpeechProxyIdentity): SpeechProxyResult {
     const stream = current(identity); if (!stream) return fail('stream_not_found');
-    finish(stream, 'ended'); return { ok: true, streamId: stream.id };
+    drain(stream); return { ok: true, streamId: stream.id };
   }
   function dispose() { disposed = true; sessions.forEach(session => { if (session.stream) finish(session.stream, 'disposed'); }); sessions.clear(); }
   return { start, writePcm, subscribe, flush, endStream, endSession, muteSession: endSession, dispose, isConfigured };

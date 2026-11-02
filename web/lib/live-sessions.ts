@@ -107,9 +107,9 @@ async function publish(session:LiveSession,portfolio:PortfolioData){
 /** build_portfolio: extract claims, then write each new/changed project in parallel, publishing each section as it lands. */
 async function build(session:LiveSession){
  if(session.building||session.revision<=session.acceptedRevision||!providerMetadata().generation.enabled)return;
- // In a multi-voice conversation, wait until someone actually claims to have built something;
+ // With two or more voices, wait until someone actually claims to have built something;
  // otherwise the first speaker (often the one asking) ends up as the portfolio's owner.
- {const t=conversation(session);if(/\[S\d{1,3}\]/.test(t)&&!builderSpeaker(t))return;}
+ {const t=conversation(session);if(new Set(t.match(/\[S\d{1,3}\]/g)).size>1&&!builderSpeaker(t))return;}
  if(session.builds>=MAX_BUILDS_PER_SESSION()){session.error='Build limit for this session reached. Your last portfolio is preserved.';return;}
  session.builds++;session.firstDirtyAt=undefined;
  // While the mic is live, the last sentence may be half-spoken ("an app called lease"); build from complete ones.

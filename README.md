@@ -10,9 +10,9 @@
 
 ## About
 
-We built Alibi at LarpHacks 2026. The theme was "build something that helps you LARP as someone you're not," so we leaned all the way into the bit.
+Alibi is our LarpHacks 2026 project. The prompt was to make something that helps you pretend to be someone you're not, and we took it pretty literally.
 
-The (very satirical) idea: you're at a networking event and someone asks what you've been working on. Alibi listens to the conversation and builds a portfolio site for whatever projects you mention, live, while you're still talking. By the time they ask "do you have a link?", there is one, and you can just show them.
+Picture a career fair. A recruiter asks about your projects and you start describing apps that don't exist. Alibi is listening the whole time, and as you talk it puts together a personal site with those projects on it. When the conversation gets to "got a link?", you pull out your phone and the site is already up. It's a joke project, but a fun one to build.
 
 ## How it works
 
@@ -45,7 +45,7 @@ The model only ever fills in data. It never writes the page itself, so everythin
 
 ## How it actually got built
 
-The original plan leaned heavily on ElevenLabs, but due to some credit issues halfway through the day, we had to rebuild the voice side on Speechmatics and move the AI to Featherless and keep going.
+We started out building on ElevenLabs, but ran into credit issues around the halfway mark, so we moved speech-to-text over to Speechmatics and the LLM calls over to Featherless. That's what it runs on today.
 
 ## Running it locally
 
@@ -77,6 +77,6 @@ Next.js · TypeScript · Tailwind · Speechmatics · Featherless · zod
 
 Built by [Keith Singh](https://github.com/KVS-ALT), Kiranpal Ghandai, Ireoluwa Oluwole and [Harshit](https://github.com/GreenKeewi).
 
-Thanks to Slava Kostrubin and Artin Mehri for putting LarpHacks together (and for the pizza).
+Thanks to Slava Kostrubin and Artin Mehri for organizing LarpHacks.
 
-*And no, we don't actually use this. We build all our projects ourselves 😭*
+*Please don't bring this to a real career fair. Every project on our own GitHub is one we actually built.*

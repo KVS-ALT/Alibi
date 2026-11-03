@@ -45,7 +45,7 @@ The model only ever fills in data. It never writes the page itself, so everythin
 
 ## How it actually got built
 
-The original plan leaned heavily on ElevenLabs. Then we couldn't redeem the credits we were supposed to get. While we were trying to figure out why, we found out the account that was supposed to hand them out had been compromised. So halfway through the day we rebuilt the voice side on Speechmatics, moved the AI to Featherless and kept going.
+The original plan leaned heavily on ElevenLabs, but due to some credit issues halfway through the day, we had to rebuild the voice side on Speechmatics and move the AI to Featherless and keep going.
 
 ## Running it locally
 
